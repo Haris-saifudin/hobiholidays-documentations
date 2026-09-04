@@ -9,7 +9,9 @@
 > - [Product Technical Design](./product-technical-design.md) — Cross-domain `product_locations` reference
 > - [Search & Filter Architecture](./product-search-filter-technical-design.md) — Area hierarchy joins in search SQL
 > - [SEO Technical Design](./seo-technical-design.md) — Destination landing page SEO (`target_type = 'AREA'`)
-> - [Area Domain Contracts](./contracts/area-contract.md) — API endpoints, autocomplete, destination landing
+> - [Area Domain Contracts](../contracts/area-contract.md) — API endpoints, autocomplete, destination landing
+> - [Backend Guide](../backend/area-backend-guide.md) — Recursive CTE traversal, PostGIS spatial queries, and caching
+> - [Frontend Guide](../frontend/area-frontend-guide.md) — "Where To?" autocomplete widget and destination landing pages
 
 ---
 

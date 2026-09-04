@@ -3,7 +3,9 @@
 > **Overview**
 > Complete REST API contract specifications for the Product Domain. In accordance with micro-frontend and clean REST standards, **Product retrieval is split into dedicated, granular sub-resource endpoints** (`/media`, `/itineraries`, `/locations`, `/variants`, `/supplementaries`, `/seo`) to eliminate payload bloat, support tabbed UI loading, and maximize edge cacheability.
 >
-> **Related Design Document:** [Product Technical Design](../product-technical-design.md)
+> **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)
+> **Backend Guide:** [Product Backend Guide](../backend/product-backend-guide.md)
+> **Frontend Guide:** [Product Frontend Guide](../frontend/product-frontend-guide.md)
 
 ---
 
@@ -205,6 +207,71 @@ Fetches high-level headline information and base journey metadata. Does **not** 
     "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
     "createdAt": "2026-09-04T08:00:00.000Z",
     "updatedAt": "2026-09-04T09:30:00.000Z"
+  }
+}
+```
+
+---
+
+### 1.4 Update Product (`PUT /api/v1/products/:id`)
+Updates mutable base product properties (name, headline, description, listing status).
+
+#### Request DTO (`UpdateProductDto`)
+```typescript
+import { IsString, IsIn, IsOptional } from 'class-validator';
+
+export class UpdateProductDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  headline?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'])
+  listingStatus?: string;
+}
+```
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product updated successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "code": "GWE",
+    "name": "Grand West Europe (Updated)",
+    "slug": "grand-west-europe",
+    "productType": "JOURNEY",
+    "listingStatus": "ACTIVE",
+    "headline": "Updated Europe Tour",
+    "description": "Updated tour overview",
+    "updatedAt": "2026-09-04T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 1.5 Delete Product (`DELETE /api/v1/products/:id`)
+Soft deletes the master product and archives its status.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product deleted successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "deleted": true
   }
 }
 ```
@@ -484,6 +551,163 @@ export class UpdateProductSeoDto {
 
 ---
 
+### 2.7 Create/Replace Itinerary (`POST /api/v1/products/:id/itineraries`)
+Creates or replaces the master itinerary structure for this product.
+
+#### Request DTO (`CreateItineraryDto`)
+```typescript
+import { IsString, IsIn, IsArray, ValidateNested, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class ItineraryItemDto {
+  @IsInt()
+  @Min(1)
+  dayNumber: number;
+
+  @IsInt()
+  @Min(1)
+  sequenceNumber: number;
+
+  @IsString()
+  @IsIn(['ACTIVITY', 'TRANSPORT', 'MEAL', 'ACCOMMODATION'])
+  itemType: 'ACTIVITY' | 'TRANSPORT' | 'MEAL' | 'ACCOMMODATION';
+
+  @IsString()
+  title: string;
+
+  @IsString()
+  description: string;
+}
+
+export class CreateItineraryDto {
+  @IsString()
+  @IsIn(['MERCHANT', 'INTERNAL'])
+  sourceType: 'MERCHANT' | 'INTERNAL' = 'INTERNAL';
+
+  @IsString()
+  @IsIn(['STANDARD', 'CUSTOM'])
+  itineraryType: 'STANDARD' | 'CUSTOM' = 'STANDARD';
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ItineraryItemDto)
+  items: ItineraryItemDto[];
+}
+```
+
+#### Success Response (201 Created)
+```json
+{
+  "statusCode": 201,
+  "message": "Itinerary created successfully",
+  "data": {
+    "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
+    "productId": "550e8400-e29b-41d4-a716-446655440010",
+    "sourceType": "INTERNAL",
+    "itineraryType": "STANDARD",
+    "totalItems": 2
+  }
+}
+```
+
+---
+
+### 2.8 Attach Destination Location (`POST /api/v1/products/:id/locations`)
+Attaches a destination marker linking the product to a geographic area (City).
+
+#### Request DTO (`AttachLocationDto`)
+```typescript
+import { IsUUID, IsString, IsIn, IsNumber, IsOptional, IsInt, Min } from 'class-validator';
+
+export class AttachLocationDto {
+  @IsUUID('4')
+  areaId: string; // Must refer to an active area where area_type = 'CITY'
+
+  @IsString()
+  @IsIn(['AREA', 'MANUAL'])
+  sourceType: 'AREA' | 'MANUAL' = 'AREA';
+
+  @IsOptional()
+  @IsString()
+  areaName?: string;
+
+  @IsOptional()
+  @IsNumber()
+  lat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  lng?: number;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number = 0;
+}
+```
+
+#### Success Response (201 Created)
+```json
+{
+  "statusCode": 201,
+  "message": "Location attached successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440081",
+    "productId": "550e8400-e29b-41d4-a716-446655440010",
+    "areaId": "550e8400-e29b-41d4-a716-446655440001",
+    "areaName": "Amsterdam",
+    "lat": 52.3676,
+    "lng": 4.9041,
+    "sortOrder": 1
+  }
+}
+```
+
+---
+
+### 2.9 Add Supplementary Content (`POST /api/v1/products/:id/supplementaries`)
+Adds modular content blocks (e.g. Inclusions, Exclusions, Important Info, Notes) to this product.
+
+#### Request DTO (`CreateSupplementaryDto`)
+```typescript
+import { IsString, IsIn, IsInt, Min, IsOptional } from 'class-validator';
+
+export class CreateSupplementaryDto {
+  @IsString()
+  @IsIn(['INCLUDED', 'EXCLUDED', 'IMPORTANT_INFO', 'NOTE'])
+  category: 'INCLUDED' | 'EXCLUDED' | 'IMPORTANT_INFO' | 'NOTE';
+
+  @IsString()
+  content: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number = 0;
+}
+```
+
+#### Success Response (201 Created)
+```json
+{
+  "statusCode": 201,
+  "message": "Supplementary content added successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440091",
+    "productId": "550e8400-e29b-41d4-a716-446655440010",
+    "category": "INCLUDED",
+    "content": "Tiket pesawat internasional PP kelas ekonomi",
+    "sortOrder": 0
+  }
+}
+```
+
+---
+
 ## 3. L2 Variant & L3 Trip Endpoints
 
 ### 3.1 Create Variant (`POST /api/v1/products/:id/variants`)
@@ -516,7 +740,90 @@ export class CreateVariantDto {
 
 ---
 
-### 3.2 List Trips (`GET /api/v1/variants/:variantId/trips`)
+### 3.2 Get Variant by ID (`GET /api/v1/variants/:id`)
+Fetches specific variant entity details by UUID.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Variant retrieved successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440020",
+    "productId": "550e8400-e29b-41d4-a716-446655440010",
+    "code": "GWE-SPR-2026",
+    "name": "GWE Spring 2026",
+    "slug": "gwe-spring-2026",
+    "variantType": "SEASONAL",
+    "durationDays": 11,
+    "durationNights": 9,
+    "listingStatus": "ACTIVE",
+    "createdAt": "2026-09-04T10:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 3.3 Update Variant (`PUT /api/v1/variants/:id`)
+Updates mutable variant properties (name, duration overrides, listing status).
+
+#### Request DTO (`UpdateVariantDto`)
+```typescript
+import { IsString, IsIn, IsInt, Min, IsOptional } from 'class-validator';
+
+export class UpdateVariantDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL'])
+  variantType?: 'STANDARD' | 'SEASONAL' | 'THEMED' | 'PROMOTIONAL';
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  durationDays?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  durationNights?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'])
+  listingStatus?: string;
+}
+```
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Variant updated successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440020",
+    "name": "GWE Spring 2026 (Updated)",
+    "slug": "gwe-spring-2026",
+    "variantType": "SEASONAL",
+    "durationDays": 11,
+    "durationNights": 9,
+    "listingStatus": "ACTIVE",
+    "updatedAt": "2026-09-04T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 3.4 List Trips (`GET /api/v1/variants/:variantId/trips`)
 Returns a paginated list of dated departure windows under a specific variant.
 
 #### Query Parameters
@@ -587,7 +894,7 @@ Returns a paginated list of dated departure windows under a specific variant.
 
 ---
 
-### 3.3 Create Trip Window (`POST /api/v1/variants/:variantId/trips`)
+### 3.5 Create Trip Window (`POST /api/v1/variants/:variantId/trips`)
 ```typescript
 export class CreateTripDto {
   @IsDateString()
@@ -602,14 +909,36 @@ export class CreateTripDto {
 
   @IsInt()
   @Min(1)
-  maxQuota: number; // Total capacity, e.g. 25
+  maxQuota: number;  // e.g. 25
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'])
+  status?: string = 'ACTIVE';
+}
+```
+
+#### Success Response (201 Created)
+```json
+{
+  "statusCode": 201,
+  "message": "Trip departure created successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440031",
+    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "startDate": "2026-04-10",
+    "endDate": "2026-04-20",
+    "minQuota": 1,
+    "maxQuota": 25,
+    "status": "ACTIVE"
+  }
 }
 ```
 
 ---
 
-### 3.4 List Trip Pricings (`GET /api/v1/trips/:tripId/pricings`)
-Returns all pricing tiers for a specific trip departure.
+### 3.6 List Trip Pricings (`GET /api/v1/trips/:tripId/pricings`)
+Returns all active price tiers associated with a specific departure window.
 
 #### Success Response (200 OK)
 ```json
@@ -623,8 +952,9 @@ Returns all pricing tiers for a specific trip departure.
       "nationalityScope": "DOMESTIC",
       "basePrice": 32000000.00,
       "sellingPrice": 28000000.00,
-      "createdAt": "2026-09-04T10:00:00.000Z",
-      "updatedAt": "2026-09-04T10:00:00.000Z"
+      "currency": "IDR",
+      "effectiveFrom": "2026-01-01T00:00:00.000Z",
+      "effectiveTo": null
     },
     {
       "id": "550e8400-e29b-41d4-a716-446655440042",
@@ -632,8 +962,9 @@ Returns all pricing tiers for a specific trip departure.
       "nationalityScope": "INTERNATIONAL",
       "basePrice": 38000000.00,
       "sellingPrice": 34000000.00,
-      "createdAt": "2026-09-04T10:00:00.000Z",
-      "updatedAt": "2026-09-04T10:00:00.000Z"
+      "currency": "IDR",
+      "effectiveFrom": "2026-01-01T00:00:00.000Z",
+      "effectiveTo": null
     }
   ]
 }
@@ -641,20 +972,53 @@ Returns all pricing tiers for a specific trip departure.
 
 ---
 
-### 3.5 Upsert Trip Pricing (`PUT /api/v1/trips/:tripId/pricings`)
+### 3.7 Upsert Trip Pricing (`PUT /api/v1/trips/:tripId/pricings`)
+Creates or updates pricing for a specific nationality scope on a trip.
+
+#### Request DTO (`UpsertPricingDto`)
 ```typescript
-export class UpsertTripPricingDto {
+import { IsNumber, IsPositive, IsIn, IsString, IsOptional, IsDateString } from 'class-validator';
+
+export class UpsertPricingDto {
   @IsString()
   @IsIn(['ALL', 'DOMESTIC', 'INTERNATIONAL'])
-  nationalityScope: 'ALL' | 'DOMESTIC' | 'INTERNATIONAL' = 'ALL';
+  nationalityScope: 'ALL' | 'DOMESTIC' | 'INTERNATIONAL';
 
-  @IsNumber()
-  @Min(0)
-  basePrice: number; // e.g. 32000000.00
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  basePrice: number;
 
-  @IsNumber()
-  @Min(0)
-  sellingPrice: number; // e.g. 28000000.00
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  sellingPrice: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string = 'IDR';
+
+  @IsOptional()
+  @IsDateString()
+  effectiveFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  effectiveTo?: string;
+}
+```
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Trip pricing upserted successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440041",
+    "tripId": "550e8400-e29b-41d4-a716-446655440031",
+    "nationalityScope": "DOMESTIC",
+    "basePrice": 32000000.00,
+    "sellingPrice": 28000000.00,
+    "currency": "IDR"
+  }
 }
 ```
 

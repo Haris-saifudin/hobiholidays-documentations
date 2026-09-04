@@ -9,9 +9,10 @@
 > - [Product Technical Design](./product-technical-design.md)
 > - [Product Hierarchy Technical Design](./product-hierarchy-technical-design.md)
 > - [Product Media Technical Design](./product-media-technical-design.md) — OG image asset strategy
-> - [Area Domain Technical Design](./area-technical-design.md) — Destination SEO landing pages
-> - [Product Contracts](./contracts/product-contract.md) — SEO sub-resource endpoint
-> - [Area Contracts](./contracts/area-contract.md) — Destination landing page with embedded SEO
+> - [Product Contracts](../contracts/product-contract.md) — SEO sub-resource endpoint
+> - [Area Contracts](../contracts/area-contract.md) — Destination landing page with embedded SEO
+> - [Backend Guide](../backend/seo-backend-guide.md) — Dynamic fallback resolver and Schema.org JSON-LD generator
+> - [Frontend Guide](../frontend/seo-frontend-guide.md) — Next.js generateMetadata(), sitemap.ts, and robots.ts
 
 ---
 

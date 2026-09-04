@@ -3,7 +3,9 @@
 > **Overview**
 > Comprehensive API contract specification for the Search & Filter engine (`GET /api/v1/variants/search`). This contract maps frontend search widgets, All Tours multi-attribute filters, and pagination parameters to validated NestJS DTOs and structured JSON responses.
 >
-> **Related Design Document:** [Product Search & Filter Architecture](../product-search-filter-technical-design.md)
+> **Related Design Document:** [Product Search & Filter Architecture](../technical/product-search-filter-technical-design.md)
+> **Backend Guide:** [Search & Filter Backend Guide](../backend/product-search-filter-backend-guide.md)
+> **Frontend Guide:** [Search & Filter Frontend Guide](../frontend/product-search-filter-frontend-guide.md)
 
 ---
 
@@ -137,6 +139,7 @@ export interface SearchVariantCard {
   productSlug: string;
   durationDays: number;
   durationNights: number;
+  coverImageUrl: string;
   destinations: DestinationHierarchy[];
   availableDates: string[]; // ISO Date string: "YYYY-MM-DD"
   startingPrice: number;    // Lowest selling_price for matching trips
@@ -195,6 +198,7 @@ Host: api.hobiholidays.com
       "productSlug": "grand-west-europe",
       "durationDays": 11,
       "durationNights": 9,
+      "coverImageUrl": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",
       "destinations": [
         {
           "continent": "Europe",
@@ -224,6 +228,7 @@ Host: api.hobiholidays.com
       "productSlug": "grand-west-europe",
       "durationDays": 9,
       "durationNights": 7,
+      "coverImageUrl": "https://cdn.hobiholidays.com/products/gwe/keukenhof-tulips.jpg",
       "destinations": [
         {
           "continent": "Europe",
@@ -281,6 +286,7 @@ Host: api.hobiholidays.com
       "productSlug": "grand-west-europe",
       "durationDays": 9,
       "durationNights": 7,
+      "coverImageUrl": "https://cdn.hobiholidays.com/products/gwe/keukenhof-tulips.jpg",
       "destinations": [
         {
           "continent": "Europe",

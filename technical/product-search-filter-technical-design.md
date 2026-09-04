@@ -20,7 +20,9 @@
 | [Area Domain](./area-technical-design.md)                      | 3-tier geography tree (Continent → Country → City), Area hierarchy joins     |
 | [Product Media](./product-media-technical-design.md)           | Media asset strategy (cover images used in variant cards)                    |
 | [SEO Architecture](./seo-technical-design.md)                  | SEO metadata, Schema.org rich snippets (search result integration)           |
-| [Search & Filter Contracts](./contracts/product-search-filter-contract.md) | API contract: request DTO validation, response payloads, error envelopes |
+| [Search & Filter Contracts](../contracts/product-search-filter-contract.md) | API contract: request DTO validation, response payloads, error envelopes |
+| [Backend Guide](../backend/product-search-filter-backend-guide.md)         | NestJS SearchFilterService, dynamic SQL builder, and trigram matching     |
+| [Frontend Guide](../frontend/product-search-filter-frontend-guide.md)       | Search & filter UI, URL query sync (useSearchParams), filter sidebar     |
 
 ---
 

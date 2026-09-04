@@ -1,103 +1,111 @@
-# Hobiholidays — Technical Architecture & API Documentation
+# Hobiholidays — Technical Architecture & Engineering Documentation
 
 > **Central Engineering Documentation Repository**
-> Comprehensive architectural blueprints, data models, PostgreSQL DDL migrations, and RESTful API contracts for the Hobiholidays tour package booking platform.
+> Architectural blueprints, relational PostgreSQL 16+ data models, RESTful API contracts, NestJS backend implementation guides, and Next.js 15 App Router frontend specifications for the Hobiholidays tour package booking platform.
 >
-> _Engineered for High Scalability, Micro-Frontend modularity, NestJS + PostgreSQL stack, and Next.js App Router edge performance._
+> _Engineered for high scalability, micro-frontend modularity, NestJS + PostgreSQL stack, and Next.js App Router edge performance._
 
 ---
 
-## 🗺️ Architectural Document Map
+## 🏛️ Platform Documentation Architecture (4 Pillars)
 
-### 1. Core Technical Design Specifications
-
-| Technical Design Document | Focus & Domain Responsibility |
-| :--- | :--- |
-| **[Product Technical Design](./product-technical-design.md)** | **Authoritative single source of truth for PostgreSQL DDL**: Products (L1), Journeys, Variants (L2), Trips (L3), Pricing tiers, Itineraries, Locations, Media, Supplementaries, and SEO tables with audit triggers and indexing summary. |
-| **[Product Hierarchy Technical Design](./product-hierarchy-technical-design.md)** | **3-level Product Hierarchy mental model** (`Product → Variant → Trip`), All Tours card rendering rules, relationship cardinality constraints, and real-world GWE catalog examples. |
-| **[Area Domain Technical Design](./area-technical-design.md)** | **3-tier Geography tree** (`Continent → Country → City`, strictly capped at City level), adjacency list traversal, PostGIS spatial boundary models, and destination markers. |
-| **[Search & Filter Architecture](./product-search-filter-technical-design.md)** | **Catalog Search Engine**: SQL execution strategy with multi-tier Area joins, DTO validation, and multi-criteria filters (**Continent, Country, Product Name, Total Pack / Pax, Min/Max Price, Departure Month, Variant Type**). |
-| **[Product Media Technical Design](./product-media-technical-design.md)** | **2-Phase Progressive Storage Strategy**: Phase 1 (Database-First `BYTEA` storage & streaming) to Phase 2 (Cloud S3/R2 Object Store + Cloudflare CDN), polymorphic usage binding, and strict 1:1 Itinerary PDF brochure guarantee. |
-| **[SEO Technical Design](./seo-technical-design.md)** | **Enterprise SEO Architecture**: Polymorphic `seo_metadata` table, dynamic programmatic fallbacks, Google Rich Results (**Schema.org `TouristTrip` + `Offer` + `BreadcrumbList`**), and Next.js App Router implementation (`generateMetadata`, `sitemap.ts`, `robots.ts`). |
-
----
-
-### 2. API Contracts Suite (`contracts/`)
-
-Complete REST API specifications defining endpoints, NestJS `class-validator` DTOs, request payloads, success/error envelopes, and TypeScript interfaces:
-
-| Contract Document | Domain Coverage | Key Highlights |
-| :--- | :--- | :--- |
-| **[Contracts Master Guide](./contracts/README.md)** | Global Standards | Base URL `/api/v1`, RFC 7807 error responses, standard pagination envelopes, and HTTP status codes. |
-| **[Product Contracts](./contracts/product-contract.md)** | Product Domain | **Split Sub-Resource GET Endpoints**: Dedicated granular retrieval for `/media`, `/itineraries`, `/locations`, `/variants`, `/supplementaries`, and `/seo` to eliminate over-fetching. |
-| **[Product Hierarchy Contracts](./contracts/product-hierarchy-contract.md)** | Catalog & Details | All Tours listing feed (`GET /api/v1/variants`) and public aggregated Variant Detail page (`GET /api/v1/variants/:slug`) with embedded SEO. |
-| **[Search & Filter Contracts](./contracts/product-search-filter-contract.md)** | Discovery Engine | `GET /api/v1/variants/search` query DTO, parameter validation rules, `totalPackages` metadata, and concrete real-world response payloads. |
-| **[Product Media Contracts](./contracts/product-media-contract.md)** | Media Subsystem | Phase 1 multipart upload & binary streaming (`/stream`), Phase 2 presigned cloud uploads, polymorphic attachments, and itinerary brochure assignment. |
-| **[Area Domain Contracts](./contracts/area-contract.md)** | Geography Domain | 3-tier hierarchy navigation (Continents, Countries, Cities), search widget autocomplete (`/autocomplete`), and destination landing pages. |
-
----
-
-## 🏛️ Core Platform Architectural Highlights
+The documentation suite is structured into four role-specialized architectural pillars:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                        3-Level Product Hierarchy                                │
-│   Products (L1 Master Brand)                                                    │
-│     └── Product Variants (L2 Bookable Card on All Tours)                        │
-│           └── Product Trips (L3 Concrete Departure Window & Quota)              │
-│                 └── Product Trip Pricings (Pricing by Nationality Scope)        │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         │
-┌────────────────────────────────────────┴────────────────────────────────────────┐
-│                        3-Tier Area Hierarchy                                    │
-│   Continents (Tier 1 Root)                                                      │
-│     └── Countries (Tier 2 Sovereign States)                                     │
-│           └── Cities (Tier 3 Maximum Granularity & Destination Marker)          │
-└────────────────────────────────────────┬────────────────────────────────────────┘
-                                         │
-┌────────────────────────────────────────┴────────────────────────────────────────┐
-│                        2-Phase Progressive Media Storage                        │
-│   Phase 1 (Database-First): product_media_blobs (BYTEA) + /stream endpoint      │
-│   Phase 2 (Cloud Scale):    AWS S3 / Cloudflare R2 + Cloudflare Edge CDN        │
-│   Zero Frontend Code Changes: Consumes media.url seamlessly across phases       │
-└─────────────────────────────────────────────────────────────────────────────────┘
+hobiholidays-documentations/
+├── technical/                             # PILLAR 1: Pure Technical Architecture & Data Models
+│   ├── README.md                          # Technical standards, PostgreSQL DDL conventions, ERDs
+│   ├── product-technical-design.md        # Authoritative PostgreSQL DDL, core ERD, audit triggers
+│   ├── product-hierarchy-technical-design.md # 3-Level hierarchy mental model, cascade rules, quota
+│   ├── area-technical-design.md           # 3-Tier geography tree, closure pattern, PostGIS
+│   ├── product-search-filter-technical-design.md # SQL join mechanics, trigram GIN, window functions
+│   ├── product-media-technical-design.md  # 2-Phase storage architecture, binary blobs, 1:1 PDF
+│   └── seo-technical-design.md            # Polymorphic SEO schema, formula matrix, rich snippets
+│
+├── contracts/                             # PILLAR 2: REST API Contracts & DTOs
+│   ├── README.md                          # Global standards, base URL, pagination, RFC 7807 errors
+│   ├── product-contract.md                # Base Product CRUD, split sub-resources, trips, pricings
+│   ├── product-hierarchy-contract.md      # All Tours catalog feed, variant detail view contract
+│   ├── area-contract.md                   # Area types, Continents/Countries/Cities, autocomplete
+│   ├── product-search-filter-contract.md  # Search DTO, filters, paginated response, totalPackages
+│   ├── product-media-contract.md          # Multipart upload, streaming, S3 presigned, usages
+│   └── seo-contract.md                    # Polymorphic SEO metadata CRUD & bulk retrieval
+│
+├── backend/                               # PILLAR 3: NestJS Backend Implementation Guides
+│   ├── README.md                          # NestJS architecture, module graph, filters, interceptors
+│   ├── product-backend-guide.md           # ProductModule, split sub-resource service architecture
+│   ├── product-hierarchy-backend-guide.md # Duration inheritance COALESCE, pessimistic booking lock
+│   ├── area-backend-guide.md              # Recursive CTE traversal query, PostGIS lookup, cache
+│   ├── product-search-filter-backend-guide.md # Dynamic SQL builder, trigram search, offset pagination
+│   ├── product-media-backend-guide.md     # Multer BYTEA streaming controller, S3 migration script
+│   └── seo-backend-guide.md               # Dynamic fallback resolver service, JSON-LD generator
+│
+└── frontend/                              # PILLAR 4: Next.js Frontend Implementation Guides
+    ├── README.md                          # Next.js 15 App Router structure, RSC vs Client boundary
+    ├── product-frontend-guide.md          # PDP tabs, split sub-resource fetching, brochure download
+    ├── product-hierarchy-frontend-guide.md# All Tours catalog card, variant badging, nationality pricing
+    ├── area-frontend-guide.md             # Where To? autocomplete widget, destination landing pages
+    ├── product-search-filter-frontend-guide.md # URL query sync (useSearchParams), filter sidebar
+    ├── product-media-frontend-guide.md    # next/image remotePatterns, responsive presets, blurhash
+    └── seo-frontend-guide.md              # generateMetadata(), JSON-LD injection, sitemap, robots
 ```
-
-### 1. 3-Level Product Hierarchy
-Tours are separated into three distinct structural layers:
-- **Product (L1):** The master brand or program umbrella (e.g. *Grand West Europe*, *Turkey Wonders*). Owns binary media assets, itineraries, destination markers, and supplementary content.
-- **Product Variant (L2):** The primary bookable tour card rendered on the All Tours listing page (e.g. *GWE Classic All-Year*, *GWE Spring 2026*, *Tulip Keukenhof Special*).
-- **Product Trip (L3):** Specific departure date windows (e.g. *10 Apr 2026 – 20 Apr 2026*) tracking passenger capacity (`min_quota`, `max_quota`) and nationality-scoped pricing tiers (`ALL`, `DOMESTIC`, `INTERNATIONAL`).
-
-### 2. 3-Tier Geography Domain
-Geographic data follows a strict 3-tier closure pattern (`Continent → Country → City`), capping maximum granularity at the City level. Products anchor destination stops at the City level, while queries dynamically traverse up to Country and Continent levels for regional filtering and destination landing hubs.
-
-### 3. Multi-Criteria Search & Filter Engine
-The search engine executes a single unified query joining Variants, Products, Journey metadata, Area hierarchy, Trips, and Pricings. It supports:
-- **Geographic Filtering:** By Continent (ID or slug) and Country (ID or slug).
-- **Product Name Search:** Trigram GIN partial text search matching L1 Product and L2 Variant titles.
-- **Total Pack / Pax Quota:** Passenger party size evaluation ensuring `min_quota <= totalPack AND max_quota >= totalPack`.
-- **Budget Range:** `minPrice` and `maxPrice` filters evaluated against trip selling prices.
-- **Result Counting:** In-query `COUNT(*) OVER() AS total_packages` window function for instant pagination and UI badges.
-
-### 4. 2-Phase Progressive Media Storage
-- **Phase 1 (Database-First):** Requires zero external cloud setup or cloud costs. Binary files are stored in PostgreSQL (`product_media_blobs`) and streamed with aggressive HTTP caching.
-- **Phase 2 (Cloud Storage & CDN):** High-traffic production offloading to AWS S3 / Cloudflare R2 with Cloudflare CDN edge caching and WebP/AVIF dynamic transformation.
-- **Zero Frontend Breaking Changes:** The frontend consumes `media.url` directly, maintaining identical behavior in both phases.
-
-### 5. Enterprise SEO & Google Rich Results
-- **Polymorphic Metadata (`seo_metadata`):** Supports custom overrides for Products, Variants, and Destinations with automatic programmatic fallback generation.
-- **Schema.org Structured Data:** Google Rich Results support via `TouristTrip` (itinerary stops, departures), `Product` & `Offer` (pricing in IDR, availability), and `BreadcrumbList`.
-- **Next.js App Router Integration:** Production-ready `generateMetadata()` implementation, dynamic XML sitemaps (`app/sitemap.ts`), and crawler directives (`app/robots.ts`).
 
 ---
 
-## 💻 Technology Stack
+## 🗺️ Master Cross-Reference Matrix
+
+Every core domain in the Hobiholidays platform maps across all four pillars:
+
+| Domain Area | Technical Architecture (`technical/`) | REST API Contract (`contracts/`) | NestJS Backend Guide (`backend/`) | Next.js Frontend Guide (`frontend/`) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Global Standards** | [Technical README](./technical/README.md) | [Contracts README](./contracts/README.md) | [Backend README](./backend/README.md) | [Frontend README](./frontend/README.md) |
+| **Product Core & Catalog** | [product-technical-design.md](./technical/product-technical-design.md) | [product-contract.md](./contracts/product-contract.md) | [product-backend-guide.md](./backend/product-backend-guide.md) | [product-frontend-guide.md](./frontend/product-frontend-guide.md) |
+| **Product Hierarchy** | [product-hierarchy-technical-design.md](./technical/product-hierarchy-technical-design.md) | [product-hierarchy-contract.md](./contracts/product-hierarchy-contract.md) | [product-hierarchy-backend-guide.md](./backend/product-hierarchy-backend-guide.md) | [product-hierarchy-frontend-guide.md](./frontend/product-hierarchy-frontend-guide.md) |
+| **Area & Geography** | [area-technical-design.md](./technical/area-technical-design.md) | [area-contract.md](./contracts/area-contract.md) | [area-backend-guide.md](./backend/area-backend-guide.md) | [area-frontend-guide.md](./frontend/area-frontend-guide.md) |
+| **Search & Discovery** | [product-search-filter-technical-design.md](./technical/product-search-filter-technical-design.md) | [product-search-filter-contract.md](./contracts/product-search-filter-contract.md) | [product-search-filter-backend-guide.md](./backend/product-search-filter-backend-guide.md) | [product-search-filter-frontend-guide.md](./frontend/product-search-filter-frontend-guide.md) |
+| **Media Subsystem** | [product-media-technical-design.md](./technical/product-media-technical-design.md) | [product-media-contract.md](./contracts/product-media-contract.md) | [product-media-backend-guide.md](./backend/product-media-backend-guide.md) | [product-media-frontend-guide.md](./frontend/product-media-frontend-guide.md) |
+| **SEO & Rich Snippets** | [seo-technical-design.md](./technical/seo-technical-design.md) | [seo-contract.md](./contracts/seo-contract.md) | [seo-backend-guide.md](./backend/seo-backend-guide.md) | [seo-frontend-guide.md](./frontend/seo-frontend-guide.md) |
+
+---
+
+## 🎯 Role-Based Reading Paths
+
+Choose your entry point based on your engineering discipline:
+
+### 1. For Solutions Architects & Database Administrators (DBAs)
+1. Start with **[Technical Architecture README](./technical/README.md)** for global DDL conventions, trigger strategies, and data modeling standards.
+2. Review the **[Product Technical Design](./technical/product-technical-design.md)** for the authoritative PostgreSQL DDL schemas.
+3. Understand the **[Product Hierarchy Technical Design](./technical/product-hierarchy-technical-design.md)** for cascade integrity and quota concurrency models.
+
+### 2. For Backend & API Platform Engineers
+1. Read the **[Backend README](./backend/README.md)** for NestJS modular structure, validation pipes, and RFC 7807 error handling.
+2. Review the **[Contracts README](./contracts/README.md)** for global endpoint standards and pagination envelopes.
+3. Dive into the domain-specific backend guides:
+   - **[Product Backend Guide](./backend/product-backend-guide.md)** — Split sub-resource architecture.
+   - **[Hierarchy Backend Guide](./backend/product-hierarchy-backend-guide.md)** — Duration `COALESCE` and pessimistic booking lock (`SELECT FOR UPDATE`).
+   - **[Media Backend Guide](./backend/product-media-backend-guide.md)** — Database streaming and AWS S3 presigned uploads.
+
+### 3. For Frontend & UI/UX Engineers
+1. Read the **[Frontend README](./frontend/README.md)** for Next.js 15 App Router architecture, Server vs Client component boundaries, and ISR caching.
+2. Explore UI implementation guides:
+   - **[Product Frontend Guide](./frontend/product-frontend-guide.md)** — Variant detail tabs, React Suspense streaming, and PDF brochure downloader.
+   - **[Product Hierarchy Frontend Guide](./frontend/product-hierarchy-frontend-guide.md)** — Bookable Variant Card and visual badging tokens.
+   - **[Search & Filter Frontend Guide](./frontend/product-search-filter-frontend-guide.md)** — URL query sync (`useSearchParams`) and filter sidebar.
+   - **[Media Frontend Guide](./frontend/product-media-frontend-guide.md)** — `next/image` setup for Phase 1 vs Phase 2 and responsive presets.
+   - **[SEO Frontend Guide](./frontend/seo-frontend-guide.md)** — `generateMetadata()` and Schema.org JSON-LD structured data.
+
+### 4. For QA Engineers & Third-Party Integrators
+1. Consult **[Contracts README](./contracts/README.md)** for base URLs, authentication headers, and standard response envelopes.
+2. Refer to individual contracts in **[`contracts/`](./contracts/)** for complete DTO validation rules, query parameters, and concrete JSON payloads.
+
+---
+
+## 💻 Technology Stack Summary
 
 - **Backend Framework:** NestJS (Node.js / TypeScript)
 - **Database Engine:** PostgreSQL 16+ with extensions (`uuid-ossp`, `pg_trgm`, `postgis`)
-- **ORM / Query Layer:** TypeORM / Kysely
+- **Query & ORM Layer:** TypeORM / Kysely
 - **Frontend Framework:** Next.js 15+ (App Router, Server Components, SSR/SSG/ISR)
-- **Styling:** Vanilla CSS / Tailwind CSS
-- **Object Storage & CDN:** AWS S3 / Cloudflare R2 + Cloudflare CDN
+- **Image Optimization:** Next.js Image Component (`next/image`) with WebP/AVIF auto-negotiation
+- **Object Storage & CDN:** AWS S3 / Cloudflare R2 + Cloudflare Edge CDN
 - **Validation:** NestJS `class-validator` and `class-transformer`

@@ -3,7 +3,9 @@
 > **Overview**
 > API contract specifications for the Area/Geography domain, managing the **3-tier geographic hierarchy** (`Continent → Country → City`), search widget autocomplete, and destination landing page metadata.
 >
-> **Related Design Document:** [Area Domain Technical Design](../area-technical-design.md)
+> **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)
+> **Backend Guide:** [Area Backend Guide](../backend/area-backend-guide.md)
+> **Frontend Guide:** [Area Frontend Guide](../frontend/area-frontend-guide.md)
 
 ---
 
@@ -14,8 +16,8 @@
 | **Area Types** | `GET` | `/api/v1/areas/types` | List area classifications (`CONTINENT`, `COUNTRY`, `CITY`) |
 | **Hierarchy Navigation** | `GET` | `/api/v1/areas/continents` | List all continents (root nodes) |
 | | `GET` | `/api/v1/areas/continents/:continentId/countries` | List countries within a continent |
-| | `GET` | `/api/v1/areas/countries/:countryId/cities` | List cities within a country (max granularity) |
-| | `GET` | `/api/v1/areas/:id/tree` | Fetch complete 3-tier ancestor/descendant tree |
+| | `GET` | `/api/v1/areas/tree` | Fetch complete global 3-tier hierarchy tree (Continents → Countries → Cities) |
+| | `GET` | `/api/v1/areas/:id/tree` | Fetch complete 3-tier ancestor/descendant tree rooted at node |
 | **Search Widget** | `GET` | `/api/v1/areas/autocomplete` | Fast autocomplete matching continent, country, or city |
 | **Destination Landing** | `GET` | `/api/v1/areas/:slug` | Destination hub page with tours count and embedded SEO |
 | **Admin CRUD** | `POST` | `/api/v1/areas` | Create geographic area node |
@@ -307,6 +309,74 @@ Returns the complete 3-tier ancestor/descendant tree rooted at the given area no
       }
     ]
   }
+}
+```
+
+---
+
+### 3.5 Global 3-Tier Hierarchy Tree (`GET /api/v1/areas/tree`)
+
+Returns the complete global geographic hierarchy (all Continents nested with their Countries and Cities). Cached with 24-hour TTL for high-speed navigation menus and dynamic sitemap generation.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Global area hierarchy tree retrieved successfully",
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Asia",
+      "slug": "asia",
+      "areaType": "CONTINENT",
+      "countries": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440002",
+          "name": "Japan",
+          "slug": "japan",
+          "code": "JP",
+          "areaType": "COUNTRY",
+          "cities": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440003",
+              "name": "Tokyo",
+              "slug": "tokyo",
+              "areaType": "CITY"
+            },
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440004",
+              "name": "Kyoto",
+              "slug": "kyoto",
+              "areaType": "CITY"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440010",
+      "name": "Europe",
+      "slug": "europe",
+      "areaType": "CONTINENT",
+      "countries": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440011",
+          "name": "France",
+          "slug": "france",
+          "code": "FR",
+          "areaType": "COUNTRY",
+          "cities": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440012",
+              "name": "Paris",
+              "slug": "paris",
+              "areaType": "CITY"
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
 

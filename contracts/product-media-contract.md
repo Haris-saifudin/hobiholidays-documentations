@@ -6,7 +6,9 @@
 > - **Phase 2 (Cloud Storage & CDN):** Presigned S3/R2 upload URLs and edge CDN delivery.
 > - **Usage Management:** Polymorphic attachment to Products, Variants, and Itinerary items, ordered gallery reordering, and atomic 1:1 Itinerary PDF brochure assignment.
 >
-> **Related Design Document:** [Product Media Technical Design](../product-media-technical-design.md)
+> **Related Design Document:** [Product Media Technical Design](../technical/product-media-technical-design.md)
+> **Backend Guide:** [Product Media Backend Guide](../backend/product-media-backend-guide.md)
+> **Frontend Guide:** [Product Media Frontend Guide](../frontend/product-media-frontend-guide.md)
 
 ---
 

@@ -9,13 +9,14 @@
 
 ## 📚 Contracts Directory Map
 
-| Contract Document | Domain Coverage | Target Technical Design |
-| :--- | :--- | :--- |
-| **[Product Contracts](./product-contract.md)** | Product L1, Journeys, Split sub-resources (`/media`, `/itineraries`, `/locations`, `/variants`, `/supplementaries`, `/seo`), Trips L3, Pricings | [product-technical-design.md](../product-technical-design.md) |
-| **[Product Hierarchy Contracts](./product-hierarchy-contract.md)** | All Tours listing feed, Variant card aggregation, Variant Detail page contract with embedded SEO | [product-hierarchy-technical-design.md](../product-hierarchy-technical-design.md) |
-| **[Search & Filter Contracts](./product-search-filter-contract.md)** | Multi-criteria search query (`SearchTripDto`), Continent, Country, Budget, Pack, Name, paginated response | [product-search-filter-technical-design.md](../product-search-filter-technical-design.md) |
-| **[Product Media Contracts](./product-media-contract.md)** | Phase 1 multipart upload/streaming & Phase 2 presigned cloud uploads, polymorphic usages, brochure | [product-media-technical-design.md](../product-media-technical-design.md) |
-| **[Area Domain Contracts](./area-contract.md)** | Area types, Continent/Country/City hierarchy, autocomplete, search, administrative CRUD | [area-technical-design.md](../area-technical-design.md) |
+| Contract Document | Domain Coverage | Target Technical Design | Backend Guide | Frontend Guide |
+| :--- | :--- | :--- | :--- | :--- |
+| **[Product Contracts](./product-contract.md)** | Product L1, Journeys, Split sub-resources (`/media`, `/itineraries`, `/locations`, `/variants`, `/supplementaries`, `/seo`), Trips L3, Pricings | [product-technical-design.md](../technical/product-technical-design.md) | [product-backend-guide.md](../backend/product-backend-guide.md) | [product-frontend-guide.md](../frontend/product-frontend-guide.md) |
+| **[Product Hierarchy Contracts](./product-hierarchy-contract.md)** | All Tours listing feed, Variant card aggregation, Variant Detail page contract with embedded SEO | [product-hierarchy-technical-design.md](../technical/product-hierarchy-technical-design.md) | [product-hierarchy-backend-guide.md](../backend/product-hierarchy-backend-guide.md) | [product-hierarchy-frontend-guide.md](../frontend/product-hierarchy-frontend-guide.md) |
+| **[Search & Filter Contracts](./product-search-filter-contract.md)** | Multi-criteria search query (`SearchTripDto`), Continent, Country, Budget, Pack, Name, paginated response | [product-search-filter-technical-design.md](../technical/product-search-filter-technical-design.md) | [product-search-filter-backend-guide.md](../backend/product-search-filter-backend-guide.md) | [product-search-filter-frontend-guide.md](../frontend/product-search-filter-frontend-guide.md) |
+| **[Product Media Contracts](./product-media-contract.md)** | Phase 1 multipart upload/streaming & Phase 2 presigned cloud uploads, polymorphic usages, brochure | [product-media-technical-design.md](../technical/product-media-technical-design.md) | [product-media-backend-guide.md](../backend/product-media-backend-guide.md) | [product-media-frontend-guide.md](../frontend/product-media-frontend-guide.md) |
+| **[Area Domain Contracts](./area-contract.md)** | Area types, Continent/Country/City hierarchy, autocomplete, search, administrative CRUD | [area-technical-design.md](../technical/area-technical-design.md) | [area-backend-guide.md](../backend/area-backend-guide.md) | [area-frontend-guide.md](../frontend/area-frontend-guide.md) |
+| **[SEO Contracts](./seo-contract.md)** | Polymorphic SEO overrides (`/api/v1/seo/:targetType/:targetId`), dynamic fallbacks, social metadata | [seo-technical-design.md](../technical/seo-technical-design.md) | [seo-backend-guide.md](../backend/seo-backend-guide.md) | [seo-frontend-guide.md](../frontend/seo-frontend-guide.md) |
 
 ---
 

@@ -3,7 +3,9 @@
 > **Overview**
 > Public-facing API contracts governing the **All Tours** listing catalog and **Variant Detail** pages. In Hobiholidays, the primary bookable unit surfaced to travelers is the **Variant (L2)**, with departures and quotas managed by **Trips (L3)** and brand context owned by **Products (L1)**.
 >
-> **Related Design Document:** [Product Hierarchy Technical Design](../product-hierarchy-technical-design.md)
+> **Related Design Document:** [Product Hierarchy Technical Design](../technical/product-hierarchy-technical-design.md)
+> **Backend Guide:** [Product Hierarchy Backend Guide](../backend/product-hierarchy-backend-guide.md)
+> **Frontend Guide:** [Product Hierarchy Frontend Guide](../frontend/product-hierarchy-frontend-guide.md)
 
 ---
 

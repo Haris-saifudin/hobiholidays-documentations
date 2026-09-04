@@ -12,8 +12,9 @@
 > - [Product Hierarchy Technical Design](./product-hierarchy-technical-design.md)
 > - [Search & Filter Architecture](./product-search-filter-technical-design.md)
 > - [Area Domain Technical Design](./area-technical-design.md)
-> - [SEO Technical Design](./seo-technical-design.md) — OG image asset strategy (`og_image_url`)
-> - [Product Media Contracts](./contracts/product-media-contract.md) — API endpoints for upload, streaming, and usage binding
+> - [Product Media Contracts](../contracts/product-media-contract.md) — API endpoints for upload, streaming, and usage binding
+> - [Backend Guide](../backend/product-media-backend-guide.md) — Multer file streaming, S3 presigned URLs, and migration script
+> - [Frontend Guide](../frontend/product-media-frontend-guide.md) — next/image setup, responsive presets, and brochure download component
 
 ---
 

@@ -15,7 +15,9 @@
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL query, indexing strategy                            |
 | [Area Domain](./area-technical-design.md)                      | 3-tier geography tree (Continent → Country → City), PostGIS spatial model    |
 | [SEO Architecture](./seo-technical-design.md)                  | SEO metadata, Schema.org rich snippets, Next.js dynamic metadata             |
-| [API Contracts](./contracts/README.md)                         | Complete REST API contracts, split sub-resources, request/response DTOs      |
+| [API Contracts](../contracts/README.md)                         | Complete REST API contracts, split sub-resources, request/response DTOs      |
+| [Backend Guide](../backend/product-backend-guide.md)            | NestJS ProductModule, services, transactions, and split endpoints             |
+| [Frontend Guide](../frontend/product-frontend-guide.md)          | Next.js 15 PDP rendering, tabbed UI loading, and brochure download           |
 
 ---
 
