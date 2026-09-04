@@ -99,13 +99,12 @@ Defines customer target tiers and nationality-specific pricing logic:
 
 Categorizes bookable cards surfaced on the **All Tours** storefront. Each variant represents a distinct marketing edition with its own departure calendar, quota, and pricing tiers:
 
-| `variant_type` | Architectural & Business Role | Real-World Example in Hobiholidays | Frontend UI Badge | Catalog Filter Tag |
-| -------------- | ----------------------------- | ---------------------------------- | ----------------- | ------------------ |
-
-| **`STANDARD`** | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | _Turkey Wonders Classic 9D_, _Grand Europe Signature 11D_ | None / `⭐ Classic` | "Regular Packages" |
-| **`SEASONAL`** | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter). | _GWE Spring 2026_, _Korea Autumn Leaves_, _Hokkaido Winter Snow 7D_ | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` | "Spring / Autumn / Winter" |
-| **`THEMED`** | Centered around cultural festivals, flower blooms, sports events, or special attractions. | _Tulip Edition (Keukenhof)_, _Japan Sakura Golden Route_, _Christmas Market Tour_ | `🌷 Tulip Edition` / `🎌 Festival` | "Themed & Events" |
-| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns with special pricing. | _Early Bird Europe 2026_, _Flash Sale Switzerland IDR 29.5M_, _Travel Fair Special_ | `🔥 Flash Sale` / `⚡ Early Bird` | "Promotions & Deals" |
+| `variant_type`    | Architectural & Business Role                                                                                       | Real-World Example in Hobiholidays                                                  | Frontend UI Badge                       | Catalog Filter Tag         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| **`STANDARD`**    | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | _Turkey Wonders Classic 9D_, _Grand Europe Signature 11D_                           | None / `⭐ Classic`                     | "Regular Packages"         |
+| **`SEASONAL`**    | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter).    | _GWE Spring 2026_, _Korea Autumn Leaves_, _Hokkaido Winter Snow 7D_                 | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` | "Spring / Autumn / Winter" |
+| **`THEMED`**      | Centered around cultural festivals, flower blooms, sports events, or special attractions.                           | _Tulip Edition (Keukenhof)_, _Japan Sakura Golden Route_, _Christmas Market Tour_   | `🌷 Tulip Edition` / `🎌 Festival`      | "Themed & Events"          |
+| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns with special pricing.                | _Early Bird Europe 2026_, _Flash Sale Switzerland IDR 29.5M_, _Travel Fair Special_ | `🔥 Flash Sale` / `⚡ Early Bird`       | "Promotions & Deals"       |
 
 #### D. Product Types (`product_type`) — `products`
 
