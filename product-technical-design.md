@@ -24,7 +24,7 @@ Backend must serve aggregated JSON payloads — never raw rows. Avoid N+1 querie
 All DDL scripts are the source of truth for ORM migrations. Every schema change must be committed as a versioned migration file and run through CI/CD pipelines — never applied manually in production.
 
 ### 3. Polymorphic Relationships
-Media usages, supplementary content, and FAQs use `(target_type, target_id)` to target multiple entity types from one table. Rules:
+Media usages and supplementary content use `(target_type, target_id)` to target multiple entity types from one table. Rules:
 
 - **DB-level:** composite B-Tree index on `(target_type, target_id)` is mandatory for read performance.
 - **App-level:** NestJS service layer is responsible for cascading deletes to polymorphic child rows inside a **database transaction** — no database FK can enforce this.
@@ -63,24 +63,12 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm"; -- Required for GIN text search indexe
 
 
 -- =========================================================================
--- 1. TAXONOMY
--- =========================================================================
-CREATE TABLE product_categories (
-    id          BIGSERIAL    PRIMARY KEY,
-    name        VARCHAR(255) NOT NULL,
-    created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-
--- =========================================================================
--- 2. CORE — L1: products & product_journeys
+-- 1. CORE — L1: products & product_journeys
 -- =========================================================================
 
 -- Master product entity — the brand/program umbrella
 CREATE TABLE products (
     id                UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    category_id       BIGINT       REFERENCES product_categories(id) ON DELETE RESTRICT,
     product_type      VARCHAR(50)  NOT NULL,                    -- e.g. JOURNEY
     code              VARCHAR(100) UNIQUE NOT NULL,             -- e.g. GWE
     slug              VARCHAR(255) UNIQUE NOT NULL,             -- e.g. grand-west-europe
@@ -90,7 +78,6 @@ CREATE TABLE products (
     updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at        TIMESTAMP    NULL
 );
-CREATE INDEX idx_products_category    ON products(category_id);
 CREATE INDEX idx_products_status      ON products(listing_status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_products_slug_trgm   ON products USING GIN (slug gin_trgm_ops);
 
@@ -107,7 +94,7 @@ CREATE TABLE product_journeys (
 
 
 -- =========================================================================
--- 3. HIERARCHY — L2: product_variants
+-- 2. HIERARCHY — L2: product_variants
 -- One product → many variants. Each variant is one card on All Tours.
 -- =========================================================================
 CREATE TABLE product_variants (
@@ -133,7 +120,7 @@ CREATE INDEX idx_variants_name_trgm    ON product_variants USING GIN (name gin_t
 
 
 -- =========================================================================
--- 4. HIERARCHY — L3: product_trips & product_trip_pricings
+-- 3. HIERARCHY — L3: product_trips & product_trip_pricings
 -- One variant → many trips. A trip is a concrete dated departure window.
 -- =========================================================================
 CREATE TABLE product_trips (
@@ -173,7 +160,7 @@ CREATE TABLE product_trip_pricings (
 
 
 -- =========================================================================
--- 5. CONTENT — Itinerary
+-- 4. CONTENT — Itinerary
 -- Day-by-day programme. Owned at the product level (shared across variants).
 -- =========================================================================
 CREATE TABLE product_itineraries (
@@ -201,7 +188,7 @@ CREATE TABLE product_itinerary_items (
 
 
 -- =========================================================================
--- 6. CONTENT — Locations
+-- 5. CONTENT — Locations
 -- Multiple destination markers per product. area_id is a logical FK to the
 -- Area/Geography domain (not enforced at DB level across domains).
 -- =========================================================================
@@ -223,7 +210,7 @@ CREATE INDEX idx_locations_area_name_trgm ON product_locations USING GIN (area_n
 
 
 -- =========================================================================
--- 7. MEDIA — product_media & product_media_usages (polymorphic)
+-- 6. MEDIA — product_media & product_media_usages (polymorphic)
 -- Media assets are owned at the product level.
 -- Usage slots (cover, gallery, thumbnail, itinerary_pdf) target entities polymorphically.
 -- Supports images, videos, and document assets (PDF brochures).
@@ -267,8 +254,8 @@ CREATE UNIQUE INDEX uq_media_usages_product_itinerary_pdf
 
 
 -- =========================================================================
--- 8. SUPPLEMENTARY CONTENT (polymorphic)
--- Reusable content blocks and FAQs that can target any entity level.
+-- 7. SUPPLEMENTARY CONTENT (polymorphic)
+-- Reusable content blocks that can target any entity level.
 -- =========================================================================
 CREATE TABLE product_supplementaries (
     id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -283,22 +270,9 @@ CREATE TABLE product_supplementaries (
 );
 CREATE INDEX idx_supplementaries_target ON product_supplementaries(target_type, target_id);
 
-CREATE TABLE product_faqs (
-    id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id  UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    target_type VARCHAR(50) NOT NULL,    -- PRODUCT | VARIANT | TRIP
-    target_id   UUID        NOT NULL,    -- Polymorphic
-    question    TEXT        NOT NULL,
-    answer      TEXT,
-    sort_order  INT         NOT NULL DEFAULT 0,
-    created_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX idx_faqs_target ON product_faqs(target_type, target_id);
-
 
 -- =========================================================================
--- 9. AUDIT TRIGGER AUTOMATION
+-- 8. AUDIT TRIGGER AUTOMATION
 -- PostgreSQL trigger function to automatically update `updated_at` timestamps
 -- upon row mutation across all domain entities.
 -- =========================================================================
@@ -312,7 +286,6 @@ $$ LANGUAGE plpgsql;
 
 -- Apply timestamp triggers to all tables with updated_at
 CREATE TRIGGER trg_products_updated_at             BEFORE UPDATE ON products             FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
-CREATE TRIGGER trg_product_categories_updated_at   BEFORE UPDATE ON product_categories   FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_journeys_updated_at     BEFORE UPDATE ON product_journeys     FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_variants_updated_at     BEFORE UPDATE ON product_variants     FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_trips_updated_at        BEFORE UPDATE ON product_trips        FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
@@ -323,7 +296,6 @@ CREATE TRIGGER trg_product_locations_updated_at    BEFORE UPDATE ON product_loca
 CREATE TRIGGER trg_product_media_updated_at        BEFORE UPDATE ON product_media        FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_media_usages_updated_at BEFORE UPDATE ON product_media_usages FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_supplementaries_updated_at BEFORE UPDATE ON product_supplementaries FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
-CREATE TRIGGER trg_product_faqs_updated_at         BEFORE UPDATE ON product_faqs         FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 ```
 
 ---
@@ -332,7 +304,7 @@ CREATE TRIGGER trg_product_faqs_updated_at         BEFORE UPDATE ON product_faqs
 
 **Product:** Turkey Wonders · **ID:** `prod_turkey_01`
 
-_Each section below shows the ERD for that sub-domain, followed by concrete sample rows._
+_Each section below shows the ERD for that sub-domain, followed by concrete sample rows. (Standard audit timestamps `created_at`, `updated_at`, and `deleted_at` are defined in the schema and ERD above, but omitted from the sample data tables below for readability)._
 
 ---
 
@@ -340,16 +312,8 @@ _Each section below shows the ERD for that sub-domain, followed by concrete samp
 
 ```mermaid
 erDiagram
-    product_categories {
-        bigint    id   PK
-        varchar   name
-        timestamp created_at
-        timestamp updated_at
-    }
-
     products {
         uuid      id              PK
-        bigint    category_id     FK
         varchar   product_type
         varchar   code
         varchar   slug
@@ -369,21 +333,16 @@ erDiagram
         timestamp updated_at
     }
 
-    product_categories ||--o{ products       : "category_id"
     products           ||--o| product_journeys: "product_id (1:1)"
 ```
 
-| Table | id | name | created_at | updated_at |
-|---|---|---|---|---|
-| `product_categories` | 10 | Cultural & Heritage Tours | 2026-01-01 00:00:00 | 2026-01-01 00:00:00 |
-
-| Table | id | category_id | product_type | code | slug | itinerary_pdf_url | listing_status | created_at | updated_at | deleted_at |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `products` | prod_turkey_01 | 10 | JOURNEY | TURKEY-WONDERS | turkey-wonders | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf | ACTIVE | 2026-01-10 09:00:00 | 2026-01-10 09:00:00 | NULL |
-
-| Table | product_id | nationality_scope | duration_days | duration_nights | created_at | updated_at |
+| Table | id | product_type | code | slug | itinerary_pdf_url | listing_status |
 |---|---|---|---|---|---|---|
-| `product_journeys` | prod_turkey_01 | ALL | 9 | 8 | 2026-01-10 09:00:00 | 2026-01-10 09:00:00 |
+| `products` | prod_turkey_01 | JOURNEY | TURKEY-WONDERS | turkey-wonders | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf | ACTIVE |
+
+| Table | product_id | nationality_scope | duration_days | duration_nights |
+|---|---|---|---|---|
+| `product_journeys` | prod_turkey_01 | ALL | 9 | 8 |
 
 ---
 
@@ -438,17 +397,17 @@ erDiagram
     product_trips     ||--o{ product_trip_pricings: "trip_id"
 ```
 
-| Table | id | product_id | name | slug | code | duration_days | duration_nights | listing_status | created_at | updated_at | deleted_at |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `product_variants` | var_turkey_oct | prod_turkey_01 | Turkey Wonders Oct 2026 | turkey-wonders-oct-2026 | TURKEY-OCT-2026 | NULL | NULL | ACTIVE | 2026-01-10 10:00:00 | 2026-01-10 10:00:00 | NULL |
+| Table | id | product_id | name | slug | code | duration_days | duration_nights | listing_status |
+|---|---|---|---|---|---|---|---|---|
+| `product_variants` | var_turkey_oct | prod_turkey_01 | Turkey Wonders Oct 2026 | turkey-wonders-oct-2026 | TURKEY-OCT-2026 | NULL | NULL | ACTIVE |
 
-| Table | id | variant_id | start_date | end_date | min_quota | max_quota | status | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_trips` | trip_tur_001 | var_turkey_oct | 2026-10-10 | 2026-10-18 | 10 | 30 | ACTIVE | 2026-01-10 10:30:00 | 2026-01-10 10:30:00 |
-
-| Table | id | trip_id | nationality_scope | base_price | selling_price | created_at | updated_at |
+| Table | id | variant_id | start_date | end_date | min_quota | max_quota | status |
 |---|---|---|---|---|---|---|---|
-| `product_trip_pricings` | pricing_001 | trip_tur_001 | ALL | 25000000.00 | 22000000.00 | 2026-01-10 11:00:00 | 2026-01-10 11:00:00 |
+| `product_trips` | trip_tur_001 | var_turkey_oct | 2026-10-10 | 2026-10-18 | 10 | 30 | ACTIVE |
+
+| Table | id | trip_id | nationality_scope | base_price | selling_price |
+|---|---|---|---|---|---|
+| `product_trip_pricings` | pricing_001 | trip_tur_001 | ALL | 25000000.00 | 22000000.00 |
 
 ---
 
@@ -485,15 +444,15 @@ erDiagram
     product_itineraries  ||--o{ product_itinerary_items : "itinerary_id"
 ```
 
-| Table | id | product_id | source_type | itinerary_type | created_at | updated_at |
-|---|---|---|---|---|---|---|
-| `product_itineraries` | itinerary_001 | prod_turkey_01 | MERCHANT | STANDARD | 2026-01-10 11:30:00 | 2026-01-10 11:30:00 |
+| Table | id | product_id | source_type | itinerary_type |
+|---|---|---|---|---|
+| `product_itineraries` | itinerary_001 | prod_turkey_01 | MERCHANT | STANDARD |
 
-| Table | id | itinerary_id | day_number | sequence_number | item_type | title | description | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_itinerary_items` | item_001 | itinerary_001 | 1 | 1 | ACTIVITY | Istanbul City Tour | Arrive at Istanbul Airport, meet tour guide, visit Blue Mosque and Hagia Sophia. | 2026-01-10 11:45:00 | 2026-01-10 11:45:00 |
-| `product_itinerary_items` | item_002 | itinerary_001 | 3 | 1 | ACTIVITY | Cappadocia Hot Air Balloon | Sunrise hot air balloon flight over Göreme Valley followed by traditional breakfast. | 2026-01-10 11:45:00 | 2026-01-10 11:45:00 |
-| `product_itinerary_items` | item_003 | itinerary_001 | 6 | 1 | ACTIVITY | Bursa Grand Mosque | Explore historical Ottoman architecture and silk market in Bursa. | 2026-01-10 11:45:00 | 2026-01-10 11:45:00 |
+| Table | id | itinerary_id | day_number | sequence_number | item_type | title | description |
+|---|---|---|---|---|---|---|---|
+| `product_itinerary_items` | item_001 | itinerary_001 | 1 | 1 | ACTIVITY | Istanbul City Tour | Arrive at Istanbul Airport, meet tour guide, visit Blue Mosque and Hagia Sophia. |
+| `product_itinerary_items` | item_002 | itinerary_001 | 3 | 1 | ACTIVITY | Cappadocia Hot Air Balloon | Sunrise hot air balloon flight over Göreme Valley followed by traditional breakfast. |
+| `product_itinerary_items` | item_003 | itinerary_001 | 6 | 1 | ACTIVITY | Bursa Grand Mosque | Explore historical Ottoman architecture and silk market in Bursa. |
 
 ---
 
@@ -505,11 +464,19 @@ erDiagram
         uuid id PK
     }
 
+    areas {
+        uuid      id             PK "Area Domain (City level)"
+        uuid      parent_id      FK "Continent -> Country -> City"
+        int       area_type_id   FK
+        varchar   name           "e.g. Istanbul, Cappadocia"
+        varchar   code
+    }
+
     product_locations {
         uuid      id          PK
         uuid      product_id  FK
         varchar   source_type
-        uuid      area_id     "logical FK → Area domain"
+        uuid      area_id     FK "logical FK → areas.id (City)"
         varchar   area_name   "denormalized"
         float     lat
         float     lng
@@ -520,13 +487,14 @@ erDiagram
     }
 
     products ||--o{ product_locations : "product_id"
+    areas    ||--o{ product_locations : "area_id (City marker)"
 ```
 
-| Table | id | product_id | source_type | area_id | area_name | lat | lng | address | sort_order | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `product_locations` | loc_01 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440001 | Istanbul | 41.0082 | 28.9784 | Sultanahmet, Istanbul, Turkey | 1 | 2026-01-10 12:00:00 | 2026-01-10 12:00:00 |
-| `product_locations` | loc_02 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440002 | Cappadocia | 38.6431 | 34.8289 | Göreme, Nevşehir, Turkey | 2 | 2026-01-10 12:00:00 | 2026-01-10 12:00:00 |
-| `product_locations` | loc_03 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440003 | Bursa | 40.1885 | 29.0610 | Osmangazi, Bursa, Turkey | 3 | 2026-01-10 12:00:00 | 2026-01-10 12:00:00 |
+| Table | id | product_id | source_type | area_id | area_name | lat | lng | address | sort_order |
+|---|---|---|---|---|---|---|---|---|---|
+| `product_locations` | loc_01 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440001 | Istanbul | 41.0082 | 28.9784 | Sultanahmet, Istanbul, Turkey | 1 |
+| `product_locations` | loc_02 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440002 | Cappadocia | 38.6431 | 34.8289 | Göreme, Nevşehir, Turkey | 2 |
+| `product_locations` | loc_03 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440003 | Bursa | 40.1885 | 29.0610 | Osmangazi, Bursa, Turkey | 3 |
 
 ---
 
@@ -566,19 +534,19 @@ erDiagram
     product_media ||--o{ product_media_usages: "media_id"
 ```
 
-| Table | id | product_id | source_upload_id | media_type | file_name | file_size_bytes | mime_type | object_key | url | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `product_media` | media_001 | prod_turkey_01 | upl_img_001 | IMAGE | hot-air-balloon.jpg | 1845200 | image/jpeg | products/turkey/hot-air-balloon.jpg | https://cdn.hobiholidays.com/products/turkey/hot-air-balloon.jpg | 2026-01-10 12:30:00 | 2026-01-10 12:30:00 |
-| `product_media` | media_002 | prod_turkey_01 | upl_doc_001 | PDF | Turkey-Wonders-Official-Itinerary.pdf | 4613734 | application/pdf | products/turkey/docs/turkey-wonders-itinerary.pdf | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf | 2026-01-10 12:35:00 | 2026-01-10 12:35:00 |
+| Table | id | product_id | source_upload_id | media_type | file_name | file_size_bytes | mime_type | object_key | url |
+|---|---|---|---|---|---|---|---|---|---|
+| `product_media` | media_001 | prod_turkey_01 | upl_img_001 | IMAGE | hot-air-balloon.jpg | 1845200 | image/jpeg | products/turkey/hot-air-balloon.jpg | https://cdn.hobiholidays.com/products/turkey/hot-air-balloon.jpg |
+| `product_media` | media_002 | prod_turkey_01 | upl_doc_001 | PDF | Turkey-Wonders-Official-Itinerary.pdf | 4613734 | application/pdf | products/turkey/docs/turkey-wonders-itinerary.pdf | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf |
 
-| Table | id | media_id | target_type | target_id | usage_context | sort_order | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|
-| `product_media_usages` | usage_001 | media_001 | PRODUCT | prod_turkey_01 | COVER | 1 | 2026-01-10 12:40:00 | 2026-01-10 12:40:00 |
-| `product_media_usages` | usage_002 | media_002 | PRODUCT | prod_turkey_01 | ITINERARY_PDF | 1 | 2026-01-10 12:40:00 | 2026-01-10 12:40:00 |
+| Table | id | media_id | target_type | target_id | usage_context | sort_order |
+|---|---|---|---|---|---|---|
+| `product_media_usages` | usage_001 | media_001 | PRODUCT | prod_turkey_01 | COVER | 1 |
+| `product_media_usages` | usage_002 | media_002 | PRODUCT | prod_turkey_01 | ITINERARY_PDF | 1 |
 
 ---
 
-### 6. Supplementary Content & FAQs
+### 6. Supplementary Content
 
 ```mermaid
 erDiagram
@@ -598,30 +566,13 @@ erDiagram
         timestamp updated_at
     }
 
-    product_faqs {
-        uuid      id          PK
-        uuid      product_id  FK
-        varchar   target_type "PRODUCT | VARIANT | TRIP"
-        uuid      target_id   "polymorphic"
-        text      question
-        text      answer
-        int       sort_order
-        timestamp created_at
-        timestamp updated_at
-    }
-
     products ||--o{ product_supplementaries : "product_id"
-    products ||--o{ product_faqs            : "product_id"
 ```
 
-| Table | id | product_id | target_type | target_id | category | content | sort_order | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_supplementaries` | supp_001 | prod_turkey_01 | PRODUCT | prod_turkey_01 | IMPORTANT_INFO | Valid passport with at least 6 months validity required from travel date. | 1 | 2026-01-10 13:00:00 | 2026-01-10 13:00:00 |
-| `product_supplementaries` | supp_002 | prod_turkey_01 | PRODUCT | prod_turkey_01 | INCLUDED | 4-star hotel accommodations, domestic flights, daily breakfast, and English-speaking guide. | 2 | 2026-01-10 13:00:00 | 2026-01-10 13:00:00 |
-
-| Table | id | product_id | target_type | target_id | question | answer | sort_order | created_at | updated_at |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_faqs` | faq_001 | prod_turkey_01 | PRODUCT | prod_turkey_01 | Is the Cappadocia hot air balloon flight guaranteed? | Balloon flights are strictly subject to local civil aviation weather clearance. If cancelled, a full refund for the flight portion is provided. | 1 | 2026-01-10 13:15:00 | 2026-01-10 13:15:00 |
+| Table | id | product_id | target_type | target_id | category | content | sort_order |
+|---|---|---|---|---|---|---|---|
+| `product_supplementaries` | supp_001 | prod_turkey_01 | PRODUCT | prod_turkey_01 | IMPORTANT_INFO | Valid passport with at least 6 months validity required from travel date. | 1 |
+| `product_supplementaries` | supp_002 | prod_turkey_01 | PRODUCT | prod_turkey_01 | INCLUDED | 4-star hotel accommodations, domestic flights, daily breakfast, and English-speaking guide. | 2 |
 
 ---
 
@@ -629,10 +580,6 @@ erDiagram
 
 ```mermaid
 flowchart LR
-    subgraph TAXONOMY["📦 Taxonomy"]
-        CAT["product_categories"]
-    end
-
     subgraph CORE["🏷️ L1 — Core"]
         P["products"]
         PJ["product_journeys"]
@@ -649,7 +596,6 @@ flowchart LR
         ITEM["product_itinerary_items"]
         LOC["product_locations"]
         SUPP["product_supplementaries"]
-        FAQ["product_faqs"]
     end
 
     subgraph MEDIA["🖼️ Media"]
@@ -657,7 +603,6 @@ flowchart LR
         MU["product_media_usages"]
     end
 
-    CAT -->|"1:N"| P
     P   -->|"1:1"| PJ
     P   -->|"1:N"| PV
     PV  -->|"1:N"| PT
@@ -666,7 +611,6 @@ flowchart LR
     ITN -->|"1:N"| ITEM
     P   -->|"1:N"| LOC
     P   -->|"1:N"| SUPP
-    P   -->|"1:N"| FAQ
     P   -->|"1:N"| M
     M   -->|"1:N"| MU
 
@@ -675,8 +619,6 @@ flowchart LR
     MU  -."ITINERARY_ITEM".-> ITEM
     SUPP -."VARIANT".-> PV
     SUPP -."TRIP".-> PT
-    FAQ  -."VARIANT".-> PV
-    FAQ  -."TRIP".-> PT
 ```
 
 ---
@@ -695,4 +637,3 @@ flowchart LR
 | `idx_media_usages_target` | `product_media_usages` | `(target_type, target_id)` | B-Tree | Polymorphic media lookup |
 | `uq_media_usages_product_itinerary_pdf` | `product_media_usages` | `(target_id, usage_context)` WHERE `target_type = 'PRODUCT' AND usage_context = 'ITINERARY_PDF'` | B-Tree unique partial | Enforce strict 1:1 single itinerary PDF per product |
 | `idx_supplementaries_target` | `product_supplementaries` | `(target_type, target_id)` | B-Tree | Polymorphic content lookup |
-| `idx_faqs_target` | `product_faqs` | `(target_type, target_id)` | B-Tree | Polymorphic FAQ lookup |

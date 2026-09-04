@@ -52,14 +52,13 @@ products
         ├── product_itineraries  (day-by-day programme)
         ├── itinerary_pdf_url    (1 product = 1 PDF brochure, shared across variants)
         ├── product_media        (hero images, gallery)
-        ├── product_supplementaries  (included/excluded lists)
-        └── product_faqs
+        └── product_supplementaries  (included/excluded lists)
 ```
 
 **Key rules:**
 | Layer | Entity | Role |
 |---|---|---|
-| **L1** | `products` | Master brand umbrella. Owns locations, itinerary (day-by-day + 1 PDF brochure), media, FAQs |
+| **L1** | `products` | Master brand umbrella. Owns locations, itinerary (day-by-day + 1 PDF brochure), media, supplementary content |
 | **L2** | `product_variants` | Named bookable edition (season / theme). Shown as a listing card |
 | **L3** | `product_trips` | Concrete dated departure window with quota |
 | **L3+** | `product_trip_pricings` | Price tiers per trip (by nationality scope) |
@@ -131,7 +130,6 @@ Key schema decisions specific to this hierarchy:
 erDiagram
     products {
         uuid      id              PK
-        bigint    category_id     FK
         varchar   product_type
         varchar   code
         varchar   slug
@@ -188,16 +186,8 @@ erDiagram
 
 ```mermaid
 erDiagram
-    product_categories {
-        bigint    id   PK
-        varchar   name
-        timestamp created_at
-        timestamp updated_at
-    }
-
     products {
         uuid      id              PK
-        bigint    category_id     FK
         varchar   product_type
         varchar   code
         varchar   slug
@@ -274,11 +264,19 @@ erDiagram
         timestamp updated_at
     }
 
+    areas {
+        uuid      id           PK "Area Domain (City level)"
+        uuid      parent_id    FK "Continent -> Country -> City"
+        int       area_type_id FK
+        varchar   name         "e.g. Amsterdam, Paris"
+        varchar   code
+    }
+
     product_locations {
         uuid      id           PK
         uuid      product_id   FK
         varchar   source_type
-        uuid      area_id      "logical FK → Area domain"
+        uuid      area_id      FK "logical FK → areas.id (City)"
         varchar   area_name    "denormalized"
         float     lat
         float     lng
@@ -324,18 +322,6 @@ erDiagram
         timestamp updated_at
     }
 
-    product_faqs {
-        uuid      id          PK
-        uuid      product_id  FK
-        varchar   target_type "PRODUCT | VARIANT | TRIP"
-        uuid      target_id   "polymorphic"
-        text      question
-        text      answer
-        timestamp created_at
-        timestamp updated_at
-    }
-
-    product_categories       ||--o{ products                : "category_id"
     products                 ||--o| product_journeys        : "product_id (1:1)"
     products                 ||--o{ product_variants        : "product_id"
     product_variants         ||--o{ product_trips           : "variant_id"
@@ -343,10 +329,10 @@ erDiagram
     products                 ||--o{ product_itineraries     : "product_id"
     product_itineraries      ||--o{ product_itinerary_items : "itinerary_id"
     products                 ||--o{ product_locations       : "product_id"
+    areas                    ||--o{ product_locations       : "area_id (City marker)"
     products                 ||--o{ product_media           : "product_id"
     product_media            ||--o{ product_media_usages    : "media_id"
     products                 ||--o{ product_supplementaries : "product_id"
-    products                 ||--o{ product_faqs            : "product_id"
 ```
 
 ---
@@ -355,10 +341,6 @@ erDiagram
 
 ```mermaid
 flowchart LR
-    subgraph TAXONOMY["📦 Taxonomy"]
-        CAT["product_categories"]
-    end
-
     subgraph CORE["🏷️ Core — L1"]
         P["products\n(master entity)"]
         PJ["product_journeys\n(base duration)"]
@@ -375,7 +357,6 @@ flowchart LR
         ITEM["product_itinerary_items"]
         LOC["product_locations"]
         SUPP["product_supplementaries"]
-        FAQ["product_faqs"]
     end
 
     subgraph MEDIA["🖼️ Media"]
@@ -383,7 +364,6 @@ flowchart LR
         MU["product_media_usages\n(polymorphic)"]
     end
 
-    CAT -->|"category_id"| P
     P   -->|"1:1"| PJ
     P   -->|"1:N"| PV
     PV  -->|"1:N"| PT
@@ -393,7 +373,6 @@ flowchart LR
     ITN -->|"1:N"| ITEM
     P   -->|"1:N"| LOC
     P   -->|"1:N"| SUPP
-    P   -->|"1:N"| FAQ
 
     P   -->|"1:N"| M
     M   -->|"1:N"| MU
@@ -404,35 +383,35 @@ flowchart LR
 
     SUPP -. "VARIANT" .-> PV
     SUPP -. "TRIP" .-> PT
-    FAQ  -. "VARIANT" .-> PV
-    FAQ  -. "TRIP" .-> PT
 ```
 
 ---
 
 ## 📋 Sample Data — Grand West Europe (GWE)
 
+> _(Note: Standard audit timestamps `created_at`, `updated_at`, and `deleted_at` are defined in the schema and ERDs above, but omitted from the sample data tables below for readability)._
+
 ### `products`
 
-| id | category_id | product_type | code | slug | itinerary_pdf_url | listing_status | created_at | updated_at | deleted_at |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| prod_gwe_01 | 10 | JOURNEY | GWE | grand-west-europe | https://cdn.hobiholidays.com/docs/itineraries/gwe-official.pdf | ACTIVE | 2026-01-05 08:00:00 | 2026-01-05 08:00:00 | NULL |
+| id | product_type | code | slug | itinerary_pdf_url | listing_status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| prod_gwe_01 | JOURNEY | GWE | grand-west-europe | https://cdn.hobiholidays.com/docs/itineraries/gwe-official.pdf | ACTIVE |
 
 ### `product_journeys`
 
-| product_id | nationality_scope | duration_days | duration_nights | created_at | updated_at |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| prod_gwe_01 | ALL | 7 | 6 | 2026-01-05 08:00:00 | 2026-01-05 08:00:00 |
+| product_id | nationality_scope | duration_days | duration_nights |
+| :--- | :--- | :--- | :--- |
+| prod_gwe_01 | ALL | 7 | 6 |
 
 ---
 
 ### `product_variants`
 
-| id | product_id | name | slug | code | duration_days | duration_nights | listing_status | created_at | updated_at | deleted_at |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| var_gwe_spr_26 | prod_gwe_01 | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE | 2026-01-05 08:30:00 | 2026-01-05 08:30:00 | NULL |
-| var_gwe_sum_26 | prod_gwe_01 | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE | 2026-01-05 08:30:00 | 2026-01-05 08:30:00 | NULL |
-| var_tulip_26 | prod_gwe_01 | Tulip Edition | tulip | GWE-TLP-2026 | 8 (override) | 7 (override) | ACTIVE | 2026-01-05 08:30:00 | 2026-01-05 08:30:00 | NULL |
+| id | product_id | name | slug | code | duration_days | duration_nights | listing_status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| var_gwe_spr_26 | prod_gwe_01 | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
+| var_gwe_sum_26 | prod_gwe_01 | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
+| var_tulip_26 | prod_gwe_01 | Tulip Edition | tulip | GWE-TLP-2026 | 8 (override) | 7 (override) | ACTIVE |
 
 > 💡 `NULL` duration_days means the variant **inherits** from `product_journeys` via `COALESCE`.
 > **All Tours** page renders **3 cards** — one per variant.
@@ -441,27 +420,27 @@ flowchart LR
 
 ### `product_trips`
 
-| id | variant_id | start_date | end_date | min_quota | max_quota | status | created_at | updated_at |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| trip_spr_01 | var_gwe_spr_26 | 2026-09-10 | 2026-09-17 | 5 | 30 | ACTIVE | 2026-01-05 09:00:00 | 2026-01-05 09:00:00 |
-| trip_spr_02 | var_gwe_spr_26 | 2026-09-17 | 2026-09-24 | 5 | 30 | ACTIVE | 2026-01-05 09:00:00 | 2026-01-05 09:00:00 |
-| trip_sum_01 | var_gwe_sum_26 | 2026-07-10 | 2026-07-17 | 5 | 30 | ACTIVE | 2026-01-05 09:00:00 | 2026-01-05 09:00:00 |
-| trip_sum_02 | var_gwe_sum_26 | 2026-07-17 | 2026-07-24 | 5 | 30 | ACTIVE | 2026-01-05 09:00:00 | 2026-01-05 09:00:00 |
-| trip_tlp_01 | var_tulip_26 | 2026-09-10 | 2026-09-17 | 5 | 25 | ACTIVE | 2026-01-05 09:00:00 | 2026-01-05 09:00:00 |
-| trip_tlp_02 | var_tulip_26 | 2026-09-17 | 2026-09-24 | 5 | 25 | ACTIVE | 2026-01-05 09:00:00 | 2026-01-05 09:00:00 |
+| id | variant_id | start_date | end_date | min_quota | max_quota | status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| trip_spr_01 | var_gwe_spr_26 | 2026-09-10 | 2026-09-17 | 5 | 30 | ACTIVE |
+| trip_spr_02 | var_gwe_spr_26 | 2026-09-17 | 2026-09-24 | 5 | 30 | ACTIVE |
+| trip_sum_01 | var_gwe_sum_26 | 2026-07-10 | 2026-07-17 | 5 | 30 | ACTIVE |
+| trip_sum_02 | var_gwe_sum_26 | 2026-07-17 | 2026-07-24 | 5 | 30 | ACTIVE |
+| trip_tlp_01 | var_tulip_26 | 2026-09-10 | 2026-09-17 | 5 | 25 | ACTIVE |
+| trip_tlp_02 | var_tulip_26 | 2026-09-17 | 2026-09-24 | 5 | 25 | ACTIVE |
 
 ---
 
 ### `product_trip_pricings`
 
-| id | trip_id | nationality_scope | base_price | selling_price | created_at | updated_at |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| price_spr_01 | trip_spr_01 | ALL | 32000000.00 | 28000000.00 | 2026-01-05 09:30:00 | 2026-01-05 09:30:00 |
-| price_spr_02 | trip_spr_02 | ALL | 32000000.00 | 28000000.00 | 2026-01-05 09:30:00 | 2026-01-05 09:30:00 |
-| price_sum_01 | trip_sum_01 | ALL | 30000000.00 | 26500000.00 | 2026-01-05 09:30:00 | 2026-01-05 09:30:00 |
-| price_sum_02 | trip_sum_02 | ALL | 30000000.00 | 26500000.00 | 2026-01-05 09:30:00 | 2026-01-05 09:30:00 |
-| price_tlp_01 | trip_tlp_01 | ALL | 35000000.00 | 31000000.00 | 2026-01-05 09:30:00 | 2026-01-05 09:30:00 |
-| price_tlp_02 | trip_tlp_02 | ALL | 35000000.00 | 31000000.00 | 2026-01-05 09:30:00 | 2026-01-05 09:30:00 |
+| id | trip_id | nationality_scope | base_price | selling_price |
+| :--- | :--- | :--- | :--- | :--- |
+| price_spr_01 | trip_spr_01 | ALL | 32000000.00 | 28000000.00 |
+| price_spr_02 | trip_spr_02 | ALL | 32000000.00 | 28000000.00 |
+| price_sum_01 | trip_sum_01 | ALL | 30000000.00 | 26500000.00 |
+| price_sum_02 | trip_sum_02 | ALL | 30000000.00 | 26500000.00 |
+| price_tlp_01 | trip_tlp_01 | ALL | 35000000.00 | 31000000.00 |
+| price_tlp_02 | trip_tlp_02 | ALL | 35000000.00 | 31000000.00 |
 
 ---
 
@@ -487,7 +466,6 @@ product_variants
 
 | Relationship | Type | Cardinality | Constraint |
 | :--- | :--- | :--- | :--- |
-| `product_categories` → `products` | Hard FK | 1 : N | `ON DELETE RESTRICT` |
 | `products` → `product_journeys` | Hard FK | 1 : 1 | `ON DELETE CASCADE` |
 | `products` → `itinerary_pdf` | Embedded / Column | 1 : 1 | Stored at L1 (`itinerary_pdf_url`) |
 | `products` → `product_variants` | Hard FK | 1 : N | `ON DELETE CASCADE` |
@@ -496,13 +474,12 @@ product_variants
 | `products` → `product_itineraries` | Hard FK | 1 : N | `ON DELETE CASCADE` |
 | `product_itineraries` → `product_itinerary_items` | Hard FK | 1 : N | `ON DELETE CASCADE` |
 | `products` → `product_locations` | Hard FK | 1 : N | `ON DELETE CASCADE` |
+| `areas` → `product_locations` | Logical FK | 1 : N | Inter-domain reference (City destination marker) |
 | `products` → `product_media` | Hard FK | 1 : N | `ON DELETE CASCADE` |
 | `product_media` → `product_media_usages` | Hard FK | 1 : N | `ON DELETE CASCADE` |
 | `products` → `product_supplementaries` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `products` → `product_faqs` | Hard FK | 1 : N | `ON DELETE CASCADE` |
 | `product_media_usages.target_id` → `*` | **Polymorphic** | N : 1 | App-layer enforced |
 | `product_supplementaries.target_id` → `*` | **Polymorphic** | N : 1 | App-layer enforced |
-| `product_faqs.target_id` → `*` | **Polymorphic** | N : 1 | App-layer enforced |
 
 ---
 
