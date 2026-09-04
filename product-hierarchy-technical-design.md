@@ -28,23 +28,25 @@ products
 └── Grand West Europe  [prod_gwe_01]
     │
     ├── product_variants
-    │   ├── GWE Spring 2026  [var_gwe_spr_26]  ← card 1 on All Tours
-    │   │     ├── product_trips
-    │   │     │   ├── 10 Sept 2026 → 17 Sept 2026  (max 30 pax)
-    │   │     │   └── 17 Sept 2026 → 24 Sept 2026  (max 30 pax)
-    │   │     └── product_trip_pricings  (IDR 28.000.000 / pax)
+    │   ├── GWE Classic All-Year [var_gwe_std_26]  (variant_type = 'STANDARD')    ← card 1: Core recurring package
+    │   │     ├── product_trips: 05 Aug 2026 → 12 Aug 2026  (max 30 pax)
+    │   │     └── product_trip_pricings: DOMESTIC Rp 29.5M / INTERNATIONAL Rp 35M
     │   │
-    │   ├── GWE Summer 2026  [var_gwe_sum_26]  ← card 2 on All Tours
-    │   │     ├── product_trips
-    │   │     │   ├── 10 July 2026 → 17 July 2026  (max 30 pax)
-    │   │     │   └── 17 July 2026 → 24 July 2026  (max 30 pax)
-    │   │     └── product_trip_pricings  (IDR 26.500.000 / pax)
+    │   ├── GWE Spring 2026      [var_gwe_spr_26]  (variant_type = 'SEASONAL')    ← card 2: Spring season series
+    │   │     ├── product_trips: 10 Sept 2026 → 17 Sept 2026  (max 30 pax)
+    │   │     └── product_trip_pricings: DOMESTIC Rp 28M / INTERNATIONAL Rp 34M
     │   │
-    │   └── Tulip  [var_tulip_26]              ← card 3 on All Tours
-    │         ├── product_trips
-    │         │   ├── 10 Sept 2026 → 17 Sept 2026  (max 25 pax)
-    │         │   └── 17 Sept 2026 → 24 Sept 2026  (max 25 pax)
-    │         └── product_trip_pricings  (IDR 31.000.000 / pax)
+    │   ├── GWE Summer 2026      [var_gwe_sum_26]  (variant_type = 'SEASONAL')    ← card 3: Summer season series
+    │   │     ├── product_trips: 10 July 2026 → 17 July 2026  (max 30 pax)
+    │   │     └── product_trip_pricings: DOMESTIC Rp 26.5M / INTERNATIONAL Rp 32.5M
+    │   │
+    │   ├── Tulip Edition        [var_tulip_26]    (variant_type = 'THEMED')      ← card 4: Keukenhof floral festival
+    │   │     ├── product_trips: 10 Sept 2026 → 17 Sept 2026  (max 25 pax)
+    │   │     └── product_trip_pricings: ALL Rp 31M
+    │   │
+    │   └── GWE Early Bird 2026  [var_gwe_eb_26]   (variant_type = 'PROMOTIONAL') ← card 5: Limited flash sale
+    │         ├── product_trips: 15 Oct 2026 → 22 Oct 2026  (max 15 pax)
+    │         └── product_trip_pricings: ALL Rp 24.5M (Flash deal tier)
     │
     └── (shared across all variants, lives at product level)
         ├── product_journeys     (base duration: 7D/6N)
@@ -62,6 +64,15 @@ products
 | **L2** | `product_variants` | Named bookable edition (season / theme). Shown as a listing card | `variant_type` (`STANDARD`, `SEASONAL`, `THEMED`, `PROMOTIONAL`), `listing_status` (inherits / independent status) |
 | **L3** | `product_trips` | Concrete dated departure window with quota | `status` (`ACTIVE`, `FULL`, `CANCELLED`, `COMPLETED`) |
 | **L3+** | `product_trip_pricings` | Price tiers per trip (by nationality scope) | `nationality_scope` (`ALL`, `DOMESTIC`, `INTERNATIONAL`) |
+
+### Variant Types & Frontend Presentation
+
+| `variant_type` | Purpose & Characteristics | Real-World Example in Hobiholidays | UI Badging on All Tours Card |
+|---|---|---|---|
+| **`STANDARD`** | Core year-round package with fixed recurring departures; unaffected by seasonal or promotional gimmicks. | *Turkey Wonders Classic 9D*, *GWE Classic All-Year* | None / `⭐ Classic` |
+| **`SEASONAL`** | Tied strictly to natural seasons & regional climate windows (Spring, Summer, Autumn, Winter). | *GWE Spring 2026*, *Korea Autumn Leaves*, *Hokkaido Winter* | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` |
+| **`THEMED`** | Centered around special events, foliage, festivals, or cultural attractions. | *Tulip Edition (Keukenhof)*, *Japan Sakura*, *Christmas Market* | `🌷 Tulip Edition` / `🎌 Festival` |
+| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns. | *Early Bird Eropa 2026*, *Flash Sale Swiss 29,5 Jt* | `🔥 Flash Sale` / `⚡ Early Bird` |
 
 ---
 
@@ -415,12 +426,14 @@ flowchart LR
 
 | id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| var_gwe_std_26 | prod_gwe_01 | STANDARD | GWE Classic All-Year | gwe-classic-all-year | GWE-STD-2026 | NULL (7) | NULL (6) | ACTIVE |
 | var_gwe_spr_26 | prod_gwe_01 | SEASONAL | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
 | var_gwe_sum_26 | prod_gwe_01 | SEASONAL | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
 | var_tulip_26 | prod_gwe_01 | THEMED | Tulip Edition | tulip | GWE-TLP-2026 | 8 (override) | 7 (override) | ACTIVE |
+| var_gwe_eb_26 | prod_gwe_01 | PROMOTIONAL | GWE Early Bird 2026 | gwe-early-bird-2026 | GWE-EB-2026 | NULL (7) | NULL (6) | ACTIVE |
 
 > 💡 `NULL` duration_days means the variant **inherits** from `product_journeys` via `COALESCE`.
-> **All Tours** page renders **3 cards** — one per variant.
+> **All Tours** page renders **5 cards** — one per variant across all 4 `variant_type` classifications.
 
 ---
 
@@ -428,12 +441,14 @@ flowchart LR
 
 | id | variant_id | start_date | end_date | min_quota | max_quota | status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| trip_std_01 | var_gwe_std_26 | 2026-08-05 | 2026-08-12 | 5 | 30 | ACTIVE |
 | trip_spr_01 | var_gwe_spr_26 | 2026-09-10 | 2026-09-17 | 5 | 30 | ACTIVE |
 | trip_spr_02 | var_gwe_spr_26 | 2026-09-17 | 2026-09-24 | 5 | 30 | ACTIVE |
 | trip_sum_01 | var_gwe_sum_26 | 2026-07-10 | 2026-07-17 | 5 | 30 | ACTIVE |
 | trip_sum_02 | var_gwe_sum_26 | 2026-07-17 | 2026-07-24 | 5 | 30 | ACTIVE |
 | trip_tlp_01 | var_tulip_26 | 2026-09-10 | 2026-09-17 | 5 | 25 | ACTIVE |
 | trip_tlp_02 | var_tulip_26 | 2026-09-17 | 2026-09-24 | 5 | 25 | ACTIVE |
+| trip_eb_01 | var_gwe_eb_26 | 2026-10-15 | 2026-10-22 | 5 | 15 | ACTIVE |
 
 ---
 
@@ -441,6 +456,8 @@ flowchart LR
 
 | id | trip_id | nationality_scope | base_price | selling_price |
 | :--- | :--- | :--- | :--- | :--- |
+| price_std_01_dom | trip_std_01 | DOMESTIC | 33000000.00 | 29500000.00 |
+| price_std_01_int | trip_std_01 | INTERNATIONAL | 39000000.00 | 35000000.00 |
 | price_spr_01_dom | trip_spr_01 | DOMESTIC | 32000000.00 | 28000000.00 |
 | price_spr_01_int | trip_spr_01 | INTERNATIONAL | 38000000.00 | 34000000.00 |
 | price_spr_02_all | trip_spr_02 | ALL | 32000000.00 | 28000000.00 |
@@ -449,6 +466,7 @@ flowchart LR
 | price_sum_02_all | trip_sum_02 | ALL | 30000000.00 | 26500000.00 |
 | price_tlp_01_all | trip_tlp_01 | ALL | 35000000.00 | 31000000.00 |
 | price_tlp_02_all | trip_tlp_02 | ALL | 35000000.00 | 31000000.00 |
+| price_eb_01_all | trip_eb_01 | ALL | 29500000.00 | 24500000.00 |
 
 ---
 

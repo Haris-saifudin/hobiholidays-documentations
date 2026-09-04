@@ -82,11 +82,14 @@ Defines customer target tiers and nationality-specific pricing logic:
 - **`INTERNATIONAL`:** Foreign Citizens (WNA) and international passport holders.
 
 #### C. Variant Types (`variant_type`) — `product_variants`
-Categorizes bookable cards surfaced on All Tours:
-- **`STANDARD`:** Core year-round package edition.
-- **`SEASONAL`:** Season-specific departure series (e.g., Spring 2026, Summer 2026).
-- **`THEMED`:** Special festival, foliage, or interest edition (e.g., Tulip Edition, Cherry Blossom).
-- **`PROMOTIONAL`:** Limited-time commercial release, early-bird special, or promotional campaign.
+Categorizes bookable cards surfaced on the **All Tours** storefront. Each variant represents a distinct marketing edition with its own departure calendar, quota, and pricing tiers:
+
+| `variant_type` | Architectural & Business Role | Real-World Example in Hobiholidays | Frontend UI Badge | Catalog Filter Tag |
+|---|---|---|---|---|
+| **`STANDARD`** | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | *Turkey Wonders Classic 9D*, *Grand Europe Signature 11D* | None / `⭐ Classic` | "Paket Reguler" |
+| **`SEASONAL`** | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter). | *GWE Spring 2026*, *Korea Autumn Leaves*, *Hokkaido Winter Snow 7D* | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` | "Musim Semi / Gugur / Dingin" |
+| **`THEMED`** | Centered around cultural festivals, flower blooms, sports events, or special attractions. | *Tulip Edition (Keukenhof)*, *Japan Sakura Golden Route*, *Christmas Market (Nataru)* | `🌷 Tulip Edition` / `🎌 Festival` | "Tematik & Event" |
+| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns with special pricing. | *Early Bird Eropa 2026*, *Flash Sale Switzerland 29,5 Jt*, *Travel Fair Special* | `🔥 Flash Sale` / `⚡ Early Bird` | "Promo & Diskon" |
 
 #### D. Product Types (`product_type`) — `products`
 - **`JOURNEY`:** Flagship curated multi-day tour program.
@@ -471,16 +474,26 @@ erDiagram
 
 | Table | id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
 |---|---|---|---|---|---|---|---|---|---|
-| `product_variants` | var_turkey_oct | prod_turkey_01 | SEASONAL | Turkey Wonders Oct 2026 | turkey-wonders-oct-2026 | TURKEY-OCT-2026 | NULL | NULL | ACTIVE |
+| `product_variants` | var_turkey_std | prod_turkey_01 | STANDARD | Turkey Wonders Classic | turkey-wonders-classic | TURKEY-STD-2026 | NULL (9) | NULL (8) | ACTIVE |
+| `product_variants` | var_turkey_oct | prod_turkey_01 | SEASONAL | Turkey Wonders Autumn | turkey-wonders-autumn-2026 | TURKEY-AUT-2026 | NULL (9) | NULL (8) | ACTIVE |
+| `product_variants` | var_turkey_bln | prod_turkey_01 | THEMED | Turkey Balloon Fiesta Edition | turkey-balloon-fiesta | TURKEY-BLN-2026 | 10 (override) | 9 (override) | ACTIVE |
+| `product_variants` | var_turkey_fls | prod_turkey_01 | PROMOTIONAL | Turkey Flash Sale 22 Jt | turkey-flash-sale-2026 | TURKEY-FLS-2026 | NULL (9) | NULL (8) | ACTIVE |
 
 | Table | id | variant_id | start_date | end_date | min_quota | max_quota | status |
 |---|---|---|---|---|---|---|---|
+| `product_trips` | trip_tur_std01 | var_turkey_std | 2026-08-10 | 2026-08-18 | 10 | 30 | ACTIVE |
 | `product_trips` | trip_tur_001 | var_turkey_oct | 2026-10-10 | 2026-10-18 | 10 | 30 | ACTIVE |
+| `product_trips` | trip_tur_bln01 | var_turkey_bln | 2026-09-15 | 2026-09-24 | 8 | 25 | ACTIVE |
+| `product_trips` | trip_tur_fls01 | var_turkey_fls | 2026-11-05 | 2026-11-13 | 10 | 15 | ACTIVE |
 
 | Table | id | trip_id | nationality_scope | base_price | selling_price |
 |---|---|---|---|---|---|
+| `product_trip_pricings` | pricing_std_dom | trip_tur_std01 | DOMESTIC | 26000000.00 | 23500000.00 |
+| `product_trip_pricings` | pricing_std_int | trip_tur_std01 | INTERNATIONAL | 31000000.00 | 28500000.00 |
 | `product_trip_pricings` | pricing_001_dom | trip_tur_001 | DOMESTIC | 25000000.00 | 22000000.00 |
 | `product_trip_pricings` | pricing_001_int | trip_tur_001 | INTERNATIONAL | 30000000.00 | 27000000.00 |
+| `product_trip_pricings` | pricing_bln_all | trip_tur_bln01 | ALL | 32000000.00 | 28900000.00 |
+| `product_trip_pricings` | pricing_fls_all | trip_tur_fls01 | ALL | 25000000.00 | 20900000.00 |
 
 ---
 
