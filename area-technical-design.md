@@ -55,7 +55,9 @@ CREATE TABLE area_types (
     name VARCHAR(50) NOT NULL UNIQUE, -- 'CONTINENT' | 'COUNTRY' | 'CITY' (max granularity is CITY)
     description TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_area_types_name CHECK (name IN ('CONTINENT', 'COUNTRY', 'CITY'))
 );
 
 CREATE TABLE areas (
@@ -69,11 +71,13 @@ CREATE TABLE areas (
     lat DOUBLE PRECISION,
     lng DOUBLE PRECISION,
     boundary GEOMETRY(Polygon, 4326), -- PostGIS polygon for geographic boundaries
-    listing_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    listing_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE | INACTIVE | ARCHIVED
     sort_order INT DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL
+    deleted_at TIMESTAMP NULL,
+
+    CONSTRAINT chk_areas_listing_status CHECK (listing_status IN ('ACTIVE', 'INACTIVE', 'ARCHIVED'))
 );
 
 -- COMPOSITE & SPATIAL INDEXES
@@ -134,7 +138,7 @@ erDiagram
         double    lat
         double    lng
         geometry  boundary       "PostGIS Polygon (4326)"
-        varchar   listing_status "ACTIVE | INACTIVE"
+        varchar   listing_status "ACTIVE | INACTIVE | ARCHIVED"
         int       sort_order
         timestamp created_at
         timestamp updated_at
@@ -159,8 +163,8 @@ erDiagram
         uuid      id             PK
         varchar   code           "e.g. TURKEY-WONDERS, GWE"
         varchar   slug           "e.g. grand-west-europe"
-        varchar   product_type   "JOURNEY"
-        varchar   listing_status "ACTIVE"
+        varchar   product_type   "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
+        varchar   listing_status "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
     }
 ```
 

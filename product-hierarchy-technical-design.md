@@ -56,12 +56,12 @@ products
 ```
 
 **Key rules:**
-| Layer | Entity | Role |
-|---|---|---|
-| **L1** | `products` | Master brand umbrella. Owns locations, itinerary (day-by-day + 1 PDF brochure), media, supplementary content |
-| **L2** | `product_variants` | Named bookable edition (season / theme). Shown as a listing card |
-| **L3** | `product_trips` | Concrete dated departure window with quota |
-| **L3+** | `product_trip_pricings` | Price tiers per trip (by nationality scope) |
+| Layer | Entity | Role | Key Classification / Type |
+|---|---|---|---|
+| **L1** | `products` | Master brand umbrella. Owns locations, itinerary (day-by-day + 1 PDF brochure), media, supplementary content | `product_type` (`JOURNEY`, `OPEN_TRIP`, `PRIVATE_TRIP`, `DAY_TOUR`), `listing_status` (`DRAFT`, `PENDING_REVIEW`, `ACTIVE`, `INACTIVE`, `ARCHIVED`, `SUSPENDED`) |
+| **L2** | `product_variants` | Named bookable edition (season / theme). Shown as a listing card | `variant_type` (`STANDARD`, `SEASONAL`, `THEMED`, `PROMOTIONAL`), `listing_status` (inherits / independent status) |
+| **L3** | `product_trips` | Concrete dated departure window with quota | `status` (`ACTIVE`, `FULL`, `CANCELLED`, `COMPLETED`) |
+| **L3+** | `product_trip_pricings` | Price tiers per trip (by nationality scope) | `nationality_scope` (`ALL`, `DOMESTIC`, `INTERNATIONAL`) |
 
 ---
 
@@ -113,9 +113,13 @@ Key schema decisions specific to this hierarchy:
 | Decision | Detail |
 |---|---|
 | `product_variants.duration_days` nullable | `NULL` = inherit from `product_journeys` via `COALESCE` |
+| `product_variants.variant_type` classification | Enforced via `CHECK (variant_type IN ('STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL'))` |
+| `listing_status` lifecycle states | Enforced via `CHECK (listing_status IN ('DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'))` |
+| `nationality_scope` pricing & journey tiers | Enforced via `CHECK (nationality_scope IN ('ALL', 'DOMESTIC', 'INTERNATIONAL'))` |
 | `UNIQUE(variant_id, start_date)` on `product_trips` | One departure per variant per calendar date |
-| `UNIQUE(trip_id, nationality_scope)` on `product_trip_pricings` | One price row per trip per nationality |
+| `UNIQUE(trip_id, nationality_scope)` on `product_trip_pricings` | One price row per trip per nationality scope |
 | `CHECK (end_date > start_date)` on `product_trips` | DB-level sanity guard on date windows |
+| `CHECK (status IN ('ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'))` | DB-level trip lifecycle guard |
 | `CHECK (selling_price > 0 AND base_price >= selling_price)` | DB-level price sanity guard |
 | Audit timestamps (`created_at`, `updated_at`) | Enforced on every table (`NOT NULL DEFAULT CURRENT_TIMESTAMP`) with trigger automation |
 | Soft deletes (`deleted_at`) | Nullable on master entities (`products`, `product_variants`) with partial indexing |
@@ -130,10 +134,10 @@ Key schema decisions specific to this hierarchy:
 erDiagram
     products {
         uuid      id              PK
-        varchar   product_type
+        varchar   product_type    "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
         varchar   slug
-        varchar   listing_status
+        varchar   listing_status  "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -142,12 +146,13 @@ erDiagram
     product_variants {
         uuid      id              PK
         uuid      product_id      FK
+        varchar   variant_type    "STANDARD | SEASONAL | THEMED | PROMOTIONAL"
         varchar   name
         varchar   slug
         varchar   code
-        int       duration_days
-        int       duration_nights
-        varchar   listing_status
+        int       duration_days   "NULL = inherit"
+        int       duration_nights "NULL = inherit"
+        varchar   listing_status  "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -160,7 +165,7 @@ erDiagram
         date      end_date
         int       min_quota
         int       max_quota
-        varchar   status
+        varchar   status          "ACTIVE | FULL | CANCELLED | COMPLETED"
         timestamp created_at
         timestamp updated_at
     }
@@ -168,7 +173,7 @@ erDiagram
     product_trip_pricings {
         uuid       id                   PK
         uuid       trip_id              FK
-        varchar    nationality_scope
+        varchar    nationality_scope    "ALL | DOMESTIC | INTERNATIONAL"
         decimal    base_price
         decimal    selling_price
         timestamp  created_at
@@ -187,20 +192,20 @@ erDiagram
 ```mermaid
 erDiagram
     products {
-        uuid      id              PK
-        varchar   product_type
+        uuid      id                PK
+        varchar   product_type      "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
         varchar   slug
         varchar   itinerary_pdf_url "1 product : 1 PDF file"
-        varchar   listing_status
+        varchar   listing_status    "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
     }
 
     product_journeys {
-        uuid      product_id      PK  "FK → products"
-        varchar   nationality_scope
+        uuid      product_id        PK  "FK → products"
+        varchar   nationality_scope "ALL | DOMESTIC | INTERNATIONAL"
         int       duration_days
         int       duration_nights
         timestamp created_at
@@ -210,12 +215,13 @@ erDiagram
     product_variants {
         uuid      id              PK
         uuid      product_id      FK
+        varchar   variant_type    "STANDARD | SEASONAL | THEMED | PROMOTIONAL"
         varchar   name
         varchar   slug
         varchar   code
         int       duration_days   "NULL = inherit"
         int       duration_nights "NULL = inherit"
-        varchar   listing_status
+        varchar   listing_status  "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -228,7 +234,7 @@ erDiagram
         date      end_date
         int       min_quota
         int       max_quota
-        varchar   status
+        varchar   status     "ACTIVE | FULL | CANCELLED | COMPLETED"
         timestamp created_at
         timestamp updated_at
     }
@@ -236,7 +242,7 @@ erDiagram
     product_trip_pricings {
         uuid      id                 PK
         uuid      trip_id            FK
-        varchar   nationality_scope
+        varchar   nationality_scope  "ALL | DOMESTIC | INTERNATIONAL"
         decimal   base_price
         decimal   selling_price
         timestamp created_at
@@ -407,11 +413,11 @@ flowchart LR
 
 ### `product_variants`
 
-| id | product_id | name | slug | code | duration_days | duration_nights | listing_status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| var_gwe_spr_26 | prod_gwe_01 | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
-| var_gwe_sum_26 | prod_gwe_01 | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
-| var_tulip_26 | prod_gwe_01 | Tulip Edition | tulip | GWE-TLP-2026 | 8 (override) | 7 (override) | ACTIVE |
+| id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| var_gwe_spr_26 | prod_gwe_01 | SEASONAL | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
+| var_gwe_sum_26 | prod_gwe_01 | SEASONAL | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
+| var_tulip_26 | prod_gwe_01 | THEMED | Tulip Edition | tulip | GWE-TLP-2026 | 8 (override) | 7 (override) | ACTIVE |
 
 > 💡 `NULL` duration_days means the variant **inherits** from `product_journeys` via `COALESCE`.
 > **All Tours** page renders **3 cards** — one per variant.
@@ -435,12 +441,14 @@ flowchart LR
 
 | id | trip_id | nationality_scope | base_price | selling_price |
 | :--- | :--- | :--- | :--- | :--- |
-| price_spr_01 | trip_spr_01 | ALL | 32000000.00 | 28000000.00 |
-| price_spr_02 | trip_spr_02 | ALL | 32000000.00 | 28000000.00 |
-| price_sum_01 | trip_sum_01 | ALL | 30000000.00 | 26500000.00 |
-| price_sum_02 | trip_sum_02 | ALL | 30000000.00 | 26500000.00 |
-| price_tlp_01 | trip_tlp_01 | ALL | 35000000.00 | 31000000.00 |
-| price_tlp_02 | trip_tlp_02 | ALL | 35000000.00 | 31000000.00 |
+| price_spr_01_dom | trip_spr_01 | DOMESTIC | 32000000.00 | 28000000.00 |
+| price_spr_01_int | trip_spr_01 | INTERNATIONAL | 38000000.00 | 34000000.00 |
+| price_spr_02_all | trip_spr_02 | ALL | 32000000.00 | 28000000.00 |
+| price_sum_01_dom | trip_sum_01 | DOMESTIC | 30000000.00 | 26500000.00 |
+| price_sum_01_int | trip_sum_01 | INTERNATIONAL | 36000000.00 | 32500000.00 |
+| price_sum_02_all | trip_sum_02 | ALL | 30000000.00 | 26500000.00 |
+| price_tlp_01_all | trip_tlp_01 | ALL | 35000000.00 | 31000000.00 |
+| price_tlp_02_all | trip_tlp_02 | ALL | 35000000.00 | 31000000.00 |
 
 ---
 

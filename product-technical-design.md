@@ -48,6 +48,58 @@ Every domain table strictly maintains timestamp tracking for auditability, cache
 - **`created_at` & `updated_at`:** Every table enforces `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`. A database trigger function (`set_updated_at_timestamp()`) automatically updates `updated_at` on row mutation to prevent stale data even during direct SQL operations.
 - **Soft Deletes (`deleted_at`):** High-value catalog entities (`products`, `product_variants`) use nullable `deleted_at` timestamps instead of physical deletion. Partial indexes explicitly exclude soft-deleted rows (`WHERE deleted_at IS NULL`) to maintain query performance.
 
+### 8. Catalog Lifecycle State Machine & Classification Enums
+All entity lifecycles, audience classifications, and category tiers are enforced strictly via database-level `CHECK` constraints:
+
+#### A. Listing Status (`listing_status`) — `products` & `product_variants`
+Governs catalog visibility, publication readiness, and public bookability across the tour lifecycle:
+- **`DRAFT`:** Initial draft state; visible only to the author/operator; not indexed in search or bookable.
+- **`PENDING_REVIEW`:** Submitted by tour creator / merchant for editorial and compliance verification; awaiting administrator approval.
+- **`ACTIVE`:** Verified, approved, and live on the storefront; indexed in search queries; bookable if valid departure trips exist.
+- **`INACTIVE`:** Temporarily paused / hidden from catalog (e.g., seasonal hiatus, content revamp); not bookable or searchable publicly.
+- **`SUSPENDED`:** Administratively frozen / locked due to safety, regulatory, policy violation, or merchant suspension.
+- **`ARCHIVED`:** Permanently retired catalog item; preserved strictly for historical booking references and financial audit trails.
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> PENDING_REVIEW : Submit for Review
+    PENDING_REVIEW --> DRAFT : Revisions Required
+    PENDING_REVIEW --> ACTIVE : Approve & Publish
+    ACTIVE --> INACTIVE : Pause / Seasonal Hiatus
+    INACTIVE --> ACTIVE : Reactivate
+    ACTIVE --> SUSPENDED : Administrative Lock
+    SUSPENDED --> ACTIVE : Resolved
+    ACTIVE --> ARCHIVED : Retire Permanently
+    INACTIVE --> ARCHIVED : Retire Permanently
+    ARCHIVED --> [*]
+```
+
+#### B. Nationality Scope Types (`nationality_scope`) — `product_journeys` & `product_trip_pricings`
+Defines customer target tiers and nationality-specific pricing logic:
+- **`ALL`:** Universal tier; open to all travelers worldwide without passport / residency differentiation.
+- **`DOMESTIC`:** Indonesian Citizens (WNI) and Indonesian resident permit / KITAS holders.
+- **`INTERNATIONAL`:** Foreign Citizens (WNA) and international passport holders.
+
+#### C. Variant Types (`variant_type`) — `product_variants`
+Categorizes bookable cards surfaced on All Tours:
+- **`STANDARD`:** Core year-round package edition.
+- **`SEASONAL`:** Season-specific departure series (e.g., Spring 2026, Summer 2026).
+- **`THEMED`:** Special festival, foliage, or interest edition (e.g., Tulip Edition, Cherry Blossom).
+- **`PROMOTIONAL`:** Limited-time commercial release, early-bird special, or promotional campaign.
+
+#### D. Product Types (`product_type`) — `products`
+- **`JOURNEY`:** Flagship curated multi-day tour program.
+- **`OPEN_TRIP`:** Scheduled open-registration group departure.
+- **`PRIVATE_TRIP`:** Bespoke / custom private charter tour.
+- **`DAY_TOUR`:** Single-day guided excursion or city tour.
+
+#### E. Trip Departure Status (`status`) — `product_trips`
+- **`ACTIVE`:** Open for booking; quota available.
+- **`FULL`:** Sold out; maximum capacity reached.
+- **`CANCELLED`:** Departure cancelled (minimum quota unmet or force majeure).
+- **`COMPLETED`:** Tour concluded successfully.
+
 ---
 
 ## 🛠️ PostgreSQL DDL Schema
@@ -69,14 +121,17 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm"; -- Required for GIN text search indexe
 -- Master product entity — the brand/program umbrella
 CREATE TABLE products (
     id                UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_type      VARCHAR(50)  NOT NULL,                    -- e.g. JOURNEY
+    product_type      VARCHAR(50)  NOT NULL,                    -- JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR
     code              VARCHAR(100) UNIQUE NOT NULL,             -- e.g. GWE
     slug              VARCHAR(255) UNIQUE NOT NULL,             -- e.g. grand-west-europe
     itinerary_pdf_url VARCHAR(500),                             -- 1 Product : 1 PDF Itinerary file (shared across variants)
-    listing_status    VARCHAR(50)  NOT NULL DEFAULT 'DRAFT',    -- DRAFT | ACTIVE | ARCHIVED
+    listing_status    VARCHAR(50)  NOT NULL DEFAULT 'DRAFT',    -- DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED
     created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at        TIMESTAMP    NULL
+    deleted_at        TIMESTAMP    NULL,
+
+    CONSTRAINT chk_products_listing_status CHECK (listing_status IN ('DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED')),
+    CONSTRAINT chk_products_type           CHECK (product_type IN ('JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'))
 );
 CREATE INDEX idx_products_status      ON products(listing_status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_products_slug_trgm   ON products USING GIN (slug gin_trgm_ops);
@@ -84,12 +139,14 @@ CREATE INDEX idx_products_slug_trgm   ON products USING GIN (slug gin_trgm_ops);
 -- Base journey metadata (1:1 with products)
 CREATE TABLE product_journeys (
     product_id          UUID        PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
-    nationality_scope   VARCHAR(50) NOT NULL DEFAULT 'ALL',
+    nationality_scope   VARCHAR(50) NOT NULL DEFAULT 'ALL',     -- ALL | DOMESTIC | INTERNATIONAL
     duration_days       INT         NOT NULL DEFAULT 1,
     duration_nights     INT         NOT NULL DEFAULT 0,
     created_at          TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT chk_duration CHECK (duration_days >= 1 AND duration_nights >= 0)
+
+    CONSTRAINT chk_duration            CHECK (duration_days >= 1 AND duration_nights >= 0),
+    CONSTRAINT chk_journey_nationality CHECK (nationality_scope IN ('ALL', 'DOMESTIC', 'INTERNATIONAL'))
 );
 
 
@@ -98,20 +155,24 @@ CREATE TABLE product_journeys (
 -- One product → many variants. Each variant is one card on All Tours.
 -- =========================================================================
 CREATE TABLE product_variants (
-    id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id      UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,             -- e.g. "GWE Spring 2026"
-    slug            VARCHAR(255) UNIQUE NOT NULL,       -- e.g. "gwe-spring-2026"
-    code            VARCHAR(100) UNIQUE NOT NULL,       -- e.g. "GWE-SPR-2026"
+    id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    product_id      UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    variant_type    VARCHAR(50)  NOT NULL DEFAULT 'STANDARD', -- STANDARD | SEASONAL | THEMED | PROMOTIONAL
+    name            VARCHAR(255) NOT NULL,                    -- e.g. "GWE Spring 2026"
+    slug            VARCHAR(255) UNIQUE NOT NULL,              -- e.g. "gwe-spring-2026"
+    code            VARCHAR(100) UNIQUE NOT NULL,              -- e.g. "GWE-SPR-2026"
 
     -- Duration override: NULL means inherit from product_journeys via COALESCE
-    duration_days   INT         NULL,
-    duration_nights INT         NULL,
+    duration_days   INT          NULL,
+    duration_nights INT          NULL,
 
-    listing_status  VARCHAR(50) NOT NULL DEFAULT 'DRAFT',  -- DRAFT | ACTIVE | ARCHIVED
-    created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at      TIMESTAMP   NULL
+    listing_status  VARCHAR(50)  NOT NULL DEFAULT 'DRAFT',    -- DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at      TIMESTAMP    NULL,
+
+    CONSTRAINT chk_variants_variant_type   CHECK (variant_type IN ('STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL')),
+    CONSTRAINT chk_variants_listing_status CHECK (listing_status IN ('DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'))
 );
 CREATE INDEX idx_variants_product_id   ON product_variants(product_id);
 CREATE INDEX idx_variants_slug         ON product_variants(slug);
@@ -130,14 +191,14 @@ CREATE TABLE product_trips (
     end_date        DATE        NOT NULL,
     min_quota       INT         NOT NULL DEFAULT 1,
     max_quota       INT         NOT NULL,
-    status          VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-    -- ACTIVE | FULL | CANCELLED | COMPLETED
+    status          VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',    -- ACTIVE | FULL | CANCELLED | COMPLETED
     created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_trip_variant_start UNIQUE (variant_id, start_date),
     CONSTRAINT chk_trip_dates        CHECK  (end_date > start_date),
-    CONSTRAINT chk_trip_quota        CHECK  (max_quota >= min_quota AND min_quota >= 1)
+    CONSTRAINT chk_trip_quota        CHECK  (max_quota >= min_quota AND min_quota >= 1),
+    CONSTRAINT chk_trips_status      CHECK  (status IN ('ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'))
 );
 CREATE INDEX idx_trips_variant_id ON product_trips(variant_id);
 -- Partial index: search queries only touch ACTIVE trips
@@ -148,14 +209,15 @@ CREATE INDEX idx_trips_search     ON product_trips(start_date, max_quota)
 CREATE TABLE product_trip_pricings (
     id                  UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
     trip_id             UUID           NOT NULL REFERENCES product_trips(id) ON DELETE CASCADE,
-    nationality_scope   VARCHAR(50)    NOT NULL DEFAULT 'ALL',
+    nationality_scope   VARCHAR(50)    NOT NULL DEFAULT 'ALL', -- ALL | DOMESTIC | INTERNATIONAL
     base_price          DECIMAL(15,2)  NOT NULL,
     selling_price       DECIMAL(15,2)  NOT NULL,
     created_at          TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT uq_pricing_trip_scope UNIQUE (trip_id, nationality_scope),
-    CONSTRAINT chk_price_sanity      CHECK  (selling_price > 0 AND base_price >= selling_price)
+    CONSTRAINT uq_pricing_trip_scope   UNIQUE (trip_id, nationality_scope),
+    CONSTRAINT chk_price_sanity        CHECK  (selling_price > 0 AND base_price >= selling_price),
+    CONSTRAINT chk_pricing_nationality CHECK  (nationality_scope IN ('ALL', 'DOMESTIC', 'INTERNATIONAL'))
 );
 
 
@@ -169,7 +231,10 @@ CREATE TABLE product_itineraries (
     source_type     VARCHAR(50) NOT NULL,       -- MERCHANT | INTERNAL
     itinerary_type  VARCHAR(50) NOT NULL,       -- STANDARD | CUSTOM
     created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_itineraries_source_type CHECK (source_type IN ('MERCHANT', 'INTERNAL')),
+    CONSTRAINT chk_itineraries_type        CHECK (itinerary_type IN ('STANDARD', 'CUSTOM'))
 );
 
 CREATE TABLE product_itinerary_items (
@@ -183,7 +248,8 @@ CREATE TABLE product_itinerary_items (
     created_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT uq_itinerary_item_order UNIQUE (itinerary_id, day_number, sequence_number)
+    CONSTRAINT uq_itinerary_item_order  UNIQUE (itinerary_id, day_number, sequence_number),
+    CONSTRAINT chk_itinerary_item_type CHECK (item_type IN ('ACTIVITY', 'TRANSPORT', 'MEAL', 'ACCOMMODATION'))
 );
 
 
@@ -203,7 +269,9 @@ CREATE TABLE product_locations (
     address     TEXT,
     sort_order  INT            NOT NULL DEFAULT 0,
     created_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_locations_source_type CHECK (source_type IN ('AREA', 'MANUAL'))
 );
 CREATE INDEX idx_locations_product_id    ON product_locations(product_id);
 CREATE INDEX idx_locations_area_name_trgm ON product_locations USING GIN (area_name gin_trgm_ops);
@@ -266,7 +334,10 @@ CREATE TABLE product_supplementaries (
     content     TEXT,
     sort_order  INT         NOT NULL DEFAULT 0,
     created_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at  TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_supp_target_type CHECK (target_type IN ('PRODUCT', 'VARIANT', 'TRIP')),
+    CONSTRAINT chk_supp_category    CHECK (category IN ('INCLUDED', 'EXCLUDED', 'IMPORTANT_INFO', 'NOTE'))
 );
 CREATE INDEX idx_supplementaries_target ON product_supplementaries(target_type, target_id);
 
@@ -313,20 +384,20 @@ _Each section below shows the ERD for that sub-domain, followed by concrete samp
 ```mermaid
 erDiagram
     products {
-        uuid      id              PK
-        varchar   product_type
+        uuid      id                PK
+        varchar   product_type      "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
         varchar   slug
         varchar   itinerary_pdf_url "1 product : 1 PDF file"
-        varchar   listing_status
+        varchar   listing_status    "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
     }
 
     product_journeys {
-        uuid      product_id         PK "FK → products"
-        varchar   nationality_scope
+        uuid      product_id        PK "FK → products"
+        varchar   nationality_scope "ALL | DOMESTIC | INTERNATIONAL"
         int       duration_days
         int       duration_nights
         timestamp created_at
@@ -357,14 +428,15 @@ erDiagram
     }
 
     product_variants {
-        uuid      id             PK
-        uuid      product_id     FK
+        uuid      id              PK
+        uuid      product_id      FK
+        varchar   variant_type    "STANDARD | SEASONAL | THEMED | PROMOTIONAL"
         varchar   name
         varchar   slug
         varchar   code
-        int       duration_days  "NULL = inherit"
-        int       duration_nights
-        varchar   listing_status
+        int       duration_days   "NULL = inherit"
+        int       duration_nights "NULL = inherit"
+        varchar   listing_status  "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at
@@ -377,15 +449,15 @@ erDiagram
         date      end_date
         int       min_quota
         int       max_quota
-        varchar   status
+        varchar   status     "ACTIVE | FULL | CANCELLED | COMPLETED"
         timestamp created_at
         timestamp updated_at
     }
 
     product_trip_pricings {
-        uuid       id                 PK
-        uuid       trip_id            FK
-        varchar    nationality_scope
+        uuid       id                PK
+        uuid       trip_id           FK
+        varchar    nationality_scope "ALL | DOMESTIC | INTERNATIONAL"
         decimal    base_price
         decimal    selling_price
         timestamp  created_at
@@ -397,9 +469,9 @@ erDiagram
     product_trips     ||--o{ product_trip_pricings: "trip_id"
 ```
 
-| Table | id | product_id | name | slug | code | duration_days | duration_nights | listing_status |
-|---|---|---|---|---|---|---|---|---|
-| `product_variants` | var_turkey_oct | prod_turkey_01 | Turkey Wonders Oct 2026 | turkey-wonders-oct-2026 | TURKEY-OCT-2026 | NULL | NULL | ACTIVE |
+| Table | id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
+|---|---|---|---|---|---|---|---|---|---|
+| `product_variants` | var_turkey_oct | prod_turkey_01 | SEASONAL | Turkey Wonders Oct 2026 | turkey-wonders-oct-2026 | TURKEY-OCT-2026 | NULL | NULL | ACTIVE |
 
 | Table | id | variant_id | start_date | end_date | min_quota | max_quota | status |
 |---|---|---|---|---|---|---|---|
@@ -407,7 +479,8 @@ erDiagram
 
 | Table | id | trip_id | nationality_scope | base_price | selling_price |
 |---|---|---|---|---|---|
-| `product_trip_pricings` | pricing_001 | trip_tur_001 | ALL | 25000000.00 | 22000000.00 |
+| `product_trip_pricings` | pricing_001_dom | trip_tur_001 | DOMESTIC | 25000000.00 | 22000000.00 |
+| `product_trip_pricings` | pricing_001_int | trip_tur_001 | INTERNATIONAL | 30000000.00 | 27000000.00 |
 
 ---
 
