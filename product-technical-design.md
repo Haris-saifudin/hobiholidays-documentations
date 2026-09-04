@@ -7,23 +7,26 @@
 
 **Document Map:**
 
-| Document | Responsibility |
-|---|---|
-| **This file** | Full DDL schema, per-table ERDs, sample data, architecture principles |
-| [Product Hierarchy](./product-hierarchy-technical-design.md) | 3-level hierarchy mental model, full-domain ERD, hierarchy sample data (GWE) |
-| [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL query, indexing strategy |
+| Document                                                       | Responsibility                                                               |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **This file**                                                  | Full DDL schema, per-table ERDs, sample data, architecture principles        |
+| [Product Hierarchy](./product-hierarchy-technical-design.md)   | 3-level hierarchy mental model, full-domain ERD, hierarchy sample data (GWE) |
+| [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL query, indexing strategy                            |
 
 ---
 
 ## 🏗️ Architecture & Engineering Principles
 
 ### 1. Client-Optimized Data Aggregation
+
 Backend must serve aggregated JSON payloads — never raw rows. Avoid N+1 queries by joining variants, trips, pricing, and media in a **single database round-trip** using TypeORM query builders or raw SQL with `json_agg`.
 
 ### 2. Schema Version Control
+
 All DDL scripts are the source of truth for ORM migrations. Every schema change must be committed as a versioned migration file and run through CI/CD pipelines — never applied manually in production.
 
 ### 3. Polymorphic Relationships
+
 Media usages and supplementary content use `(target_type, target_id)` to target multiple entity types from one table. Rules:
 
 - **DB-level:** composite B-Tree index on `(target_type, target_id)` is mandatory for read performance.
@@ -31,28 +34,37 @@ Media usages and supplementary content use `(target_type, target_id)` to target 
 - **Valid `target_type` values:** `PRODUCT` · `VARIANT` · `TRIP` · `ITINERARY_ITEM`
 
 ### 4. Concurrency & Quota Management
+
 `product_trips.max_quota` is an **immutable ceiling** set at product configuration time. During booking, use **Pessimistic Locking** (`SELECT ... FOR UPDATE`) on the trip row to prevent race conditions. Live availability is tracked in a separate `product_trip_bookings` table — never mutate `max_quota`.
 
 ### 5. Precision Economics
+
 All price columns use `DECIMAL(15,2)`. Never use `FLOAT` or `DOUBLE` for monetary values. Use `decimal.js` or `big.js` in NestJS for all arithmetic before returning to clients.
 
 ### 6. Media & Document (PDF) Lifecycle & Validation
+
 `product_media` serves as the centralized repository for all binary assets: images, videos, and PDF documents.
+
 - **MIME & Byte Validation:** PDF uploads require strict backend validation for `application/pdf` along with magic byte (`%PDF-`) verification in the NestJS upload interceptor. Maximum file size is strictly capped (e.g., 20 MB).
 - **Single Itinerary PDF Guarantee:** A partial unique index (`uq_media_usages_product_itinerary_pdf`) on `product_media_usages` guarantees at the database level that a product can have at most **one** active `ITINERARY_PDF` usage.
 - **Client Download Disposition:** Media records store `file_name` and `file_size_bytes` so UI clients can display human-readable labels and file size indicators (`PDF • 4.6 MB`). CDN / S3 headers must stream downloads with `Content-Disposition: attachment; filename="<file_name>"`.
 - **Fast Read Redundancy:** While `product_media` is the authoritative source of file metadata, `products.itinerary_pdf_url` stores the denormalized active CDN URL for instant O(1) reads without table joins.
 
 ### 7. Audit Timestamps & State Traceability (`created_at`, `updated_at`, `deleted_at`)
+
 Every domain table strictly maintains timestamp tracking for auditability, cache invalidation, and data synchronization:
+
 - **`created_at` & `updated_at`:** Every table enforces `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`. A database trigger function (`set_updated_at_timestamp()`) automatically updates `updated_at` on row mutation to prevent stale data even during direct SQL operations.
 - **Soft Deletes (`deleted_at`):** High-value catalog entities (`products`, `product_variants`) use nullable `deleted_at` timestamps instead of physical deletion. Partial indexes explicitly exclude soft-deleted rows (`WHERE deleted_at IS NULL`) to maintain query performance.
 
 ### 8. Catalog Lifecycle State Machine & Classification Enums
+
 All entity lifecycles, audience classifications, and category tiers are enforced strictly via database-level `CHECK` constraints:
 
 #### A. Listing Status (`listing_status`) — `products` & `product_variants`
+
 Governs catalog visibility, publication readiness, and public bookability across the tour lifecycle:
+
 - **`DRAFT`:** Initial draft state; visible only to the author/operator; not indexed in search or bookable.
 - **`PENDING_REVIEW`:** Submitted by tour creator / merchant for editorial and compliance verification; awaiting administrator approval.
 - **`ACTIVE`:** Verified, approved, and live on the storefront; indexed in search queries; bookable if valid departure trips exist.
@@ -76,28 +88,34 @@ stateDiagram-v2
 ```
 
 #### B. Nationality Scope Types (`nationality_scope`) — `product_journeys` & `product_trip_pricings`
+
 Defines customer target tiers and nationality-specific pricing logic:
+
 - **`ALL`:** Universal tier; open to all travelers worldwide without passport / residency differentiation.
 - **`DOMESTIC`:** Indonesian Citizens (WNI) and Indonesian resident permit / KITAS holders.
 - **`INTERNATIONAL`:** Foreign Citizens (WNA) and international passport holders.
 
 #### C. Variant Types (`variant_type`) — `product_variants`
+
 Categorizes bookable cards surfaced on the **All Tours** storefront. Each variant represents a distinct marketing edition with its own departure calendar, quota, and pricing tiers:
 
 | `variant_type` | Architectural & Business Role | Real-World Example in Hobiholidays | Frontend UI Badge | Catalog Filter Tag |
-|---|---|---|---|---|
-| **`STANDARD`** | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | *Turkey Wonders Classic 9D*, *Grand Europe Signature 11D* | None / `⭐ Classic` | "Paket Reguler" |
-| **`SEASONAL`** | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter). | *GWE Spring 2026*, *Korea Autumn Leaves*, *Hokkaido Winter Snow 7D* | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` | "Musim Semi / Gugur / Dingin" |
-| **`THEMED`** | Centered around cultural festivals, flower blooms, sports events, or special attractions. | *Tulip Edition (Keukenhof)*, *Japan Sakura Golden Route*, *Christmas Market (Nataru)* | `🌷 Tulip Edition` / `🎌 Festival` | "Tematik & Event" |
-| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns with special pricing. | *Early Bird Eropa 2026*, *Flash Sale Switzerland 29,5 Jt*, *Travel Fair Special* | `🔥 Flash Sale` / `⚡ Early Bird` | "Promo & Diskon" |
+| -------------- | ----------------------------- | ---------------------------------- | ----------------- | ------------------ |
+
+| **`STANDARD`** | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | _Turkey Wonders Classic 9D_, _Grand Europe Signature 11D_ | None / `⭐ Classic` | "Regular Packages" |
+| **`SEASONAL`** | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter). | _GWE Spring 2026_, _Korea Autumn Leaves_, _Hokkaido Winter Snow 7D_ | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` | "Spring / Autumn / Winter" |
+| **`THEMED`** | Centered around cultural festivals, flower blooms, sports events, or special attractions. | _Tulip Edition (Keukenhof)_, _Japan Sakura Golden Route_, _Christmas Market Tour_ | `🌷 Tulip Edition` / `🎌 Festival` | "Themed & Events" |
+| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns with special pricing. | _Early Bird Europe 2026_, _Flash Sale Switzerland IDR 29.5M_, _Travel Fair Special_ | `🔥 Flash Sale` / `⚡ Early Bird` | "Promotions & Deals" |
 
 #### D. Product Types (`product_type`) — `products`
+
 - **`JOURNEY`:** Flagship curated multi-day tour program.
 - **`OPEN_TRIP`:** Scheduled open-registration group departure.
 - **`PRIVATE_TRIP`:** Bespoke / custom private charter tour.
 - **`DAY_TOUR`:** Single-day guided excursion or city tour.
 
 #### E. Trip Departure Status (`status`) — `product_trips`
+
 - **`ACTIVE`:** Open for booking; quota available.
 - **`FULL`:** Sold out; maximum capacity reached.
 - **`CANCELLED`:** Departure cancelled (minimum quota unmet or force majeure).
@@ -410,13 +428,13 @@ erDiagram
     products           ||--o| product_journeys: "product_id (1:1)"
 ```
 
-| Table | id | product_type | code | slug | itinerary_pdf_url | listing_status |
-|---|---|---|---|---|---|---|
-| `products` | prod_turkey_01 | JOURNEY | TURKEY-WONDERS | turkey-wonders | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf | ACTIVE |
+| Table      | id             | product_type | code           | slug           | itinerary_pdf_url                                                | listing_status |
+| ---------- | -------------- | ------------ | -------------- | -------------- | ---------------------------------------------------------------- | -------------- |
+| `products` | prod_turkey_01 | JOURNEY      | TURKEY-WONDERS | turkey-wonders | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf | ACTIVE         |
 
-| Table | product_id | nationality_scope | duration_days | duration_nights |
-|---|---|---|---|---|
-| `product_journeys` | prod_turkey_01 | ALL | 9 | 8 |
+| Table              | product_id     | nationality_scope | duration_days | duration_nights |
+| ------------------ | -------------- | ----------------- | ------------- | --------------- |
+| `product_journeys` | prod_turkey_01 | ALL               | 9             | 8               |
 
 ---
 
@@ -472,28 +490,28 @@ erDiagram
     product_trips     ||--o{ product_trip_pricings: "trip_id"
 ```
 
-| Table | id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_variants` | var_turkey_std | prod_turkey_01 | STANDARD | Turkey Wonders Classic | turkey-wonders-classic | TURKEY-STD-2026 | NULL (9) | NULL (8) | ACTIVE |
-| `product_variants` | var_turkey_oct | prod_turkey_01 | SEASONAL | Turkey Wonders Autumn | turkey-wonders-autumn-2026 | TURKEY-AUT-2026 | NULL (9) | NULL (8) | ACTIVE |
-| `product_variants` | var_turkey_bln | prod_turkey_01 | THEMED | Turkey Balloon Fiesta Edition | turkey-balloon-fiesta | TURKEY-BLN-2026 | 10 (override) | 9 (override) | ACTIVE |
-| `product_variants` | var_turkey_fls | prod_turkey_01 | PROMOTIONAL | Turkey Flash Sale 22 Jt | turkey-flash-sale-2026 | TURKEY-FLS-2026 | NULL (9) | NULL (8) | ACTIVE |
+| Table              | id             | product_id     | variant_type | name                          | slug                       | code            | duration_days | duration_nights | listing_status |
+| ------------------ | -------------- | -------------- | ------------ | ----------------------------- | -------------------------- | --------------- | ------------- | --------------- | -------------- |
+| `product_variants` | var_turkey_std | prod_turkey_01 | STANDARD     | Turkey Wonders Classic        | turkey-wonders-classic     | TURKEY-STD-2026 | NULL (9)      | NULL (8)        | ACTIVE         |
+| `product_variants` | var_turkey_oct | prod_turkey_01 | SEASONAL     | Turkey Wonders Autumn         | turkey-wonders-autumn-2026 | TURKEY-AUT-2026 | NULL (9)      | NULL (8)        | ACTIVE         |
+| `product_variants` | var_turkey_bln | prod_turkey_01 | THEMED       | Turkey Balloon Fiesta Edition | turkey-balloon-fiesta      | TURKEY-BLN-2026 | 10 (override) | 9 (override)    | ACTIVE         |
+| `product_variants` | var_turkey_fls | prod_turkey_01 | PROMOTIONAL  | Turkey Flash Sale IDR 22M     | turkey-flash-sale-2026     | TURKEY-FLS-2026 | NULL (9)      | NULL (8)        | ACTIVE         |
 
-| Table | id | variant_id | start_date | end_date | min_quota | max_quota | status |
-|---|---|---|---|---|---|---|---|
-| `product_trips` | trip_tur_std01 | var_turkey_std | 2026-08-10 | 2026-08-18 | 10 | 30 | ACTIVE |
-| `product_trips` | trip_tur_001 | var_turkey_oct | 2026-10-10 | 2026-10-18 | 10 | 30 | ACTIVE |
-| `product_trips` | trip_tur_bln01 | var_turkey_bln | 2026-09-15 | 2026-09-24 | 8 | 25 | ACTIVE |
-| `product_trips` | trip_tur_fls01 | var_turkey_fls | 2026-11-05 | 2026-11-13 | 10 | 15 | ACTIVE |
+| Table           | id             | variant_id     | start_date | end_date   | min_quota | max_quota | status |
+| --------------- | -------------- | -------------- | ---------- | ---------- | --------- | --------- | ------ |
+| `product_trips` | trip_tur_std01 | var_turkey_std | 2026-08-10 | 2026-08-18 | 10        | 30        | ACTIVE |
+| `product_trips` | trip_tur_001   | var_turkey_oct | 2026-10-10 | 2026-10-18 | 10        | 30        | ACTIVE |
+| `product_trips` | trip_tur_bln01 | var_turkey_bln | 2026-09-15 | 2026-09-24 | 8         | 25        | ACTIVE |
+| `product_trips` | trip_tur_fls01 | var_turkey_fls | 2026-11-05 | 2026-11-13 | 10        | 15        | ACTIVE |
 
-| Table | id | trip_id | nationality_scope | base_price | selling_price |
-|---|---|---|---|---|---|
-| `product_trip_pricings` | pricing_std_dom | trip_tur_std01 | DOMESTIC | 26000000.00 | 23500000.00 |
-| `product_trip_pricings` | pricing_std_int | trip_tur_std01 | INTERNATIONAL | 31000000.00 | 28500000.00 |
-| `product_trip_pricings` | pricing_001_dom | trip_tur_001 | DOMESTIC | 25000000.00 | 22000000.00 |
-| `product_trip_pricings` | pricing_001_int | trip_tur_001 | INTERNATIONAL | 30000000.00 | 27000000.00 |
-| `product_trip_pricings` | pricing_bln_all | trip_tur_bln01 | ALL | 32000000.00 | 28900000.00 |
-| `product_trip_pricings` | pricing_fls_all | trip_tur_fls01 | ALL | 25000000.00 | 20900000.00 |
+| Table                   | id              | trip_id        | nationality_scope | base_price  | selling_price |
+| ----------------------- | --------------- | -------------- | ----------------- | ----------- | ------------- |
+| `product_trip_pricings` | pricing_std_dom | trip_tur_std01 | DOMESTIC          | 26000000.00 | 23500000.00   |
+| `product_trip_pricings` | pricing_std_int | trip_tur_std01 | INTERNATIONAL     | 31000000.00 | 28500000.00   |
+| `product_trip_pricings` | pricing_001_dom | trip_tur_001   | DOMESTIC          | 25000000.00 | 22000000.00   |
+| `product_trip_pricings` | pricing_001_int | trip_tur_001   | INTERNATIONAL     | 30000000.00 | 27000000.00   |
+| `product_trip_pricings` | pricing_bln_all | trip_tur_bln01 | ALL               | 32000000.00 | 28900000.00   |
+| `product_trip_pricings` | pricing_fls_all | trip_tur_fls01 | ALL               | 25000000.00 | 20900000.00   |
 
 ---
 
@@ -530,15 +548,15 @@ erDiagram
     product_itineraries  ||--o{ product_itinerary_items : "itinerary_id"
 ```
 
-| Table | id | product_id | source_type | itinerary_type |
-|---|---|---|---|---|
-| `product_itineraries` | itinerary_001 | prod_turkey_01 | MERCHANT | STANDARD |
+| Table                 | id            | product_id     | source_type | itinerary_type |
+| --------------------- | ------------- | -------------- | ----------- | -------------- |
+| `product_itineraries` | itinerary_001 | prod_turkey_01 | MERCHANT    | STANDARD       |
 
-| Table | id | itinerary_id | day_number | sequence_number | item_type | title | description |
-|---|---|---|---|---|---|---|---|
-| `product_itinerary_items` | item_001 | itinerary_001 | 1 | 1 | ACTIVITY | Istanbul City Tour | Arrive at Istanbul Airport, meet tour guide, visit Blue Mosque and Hagia Sophia. |
-| `product_itinerary_items` | item_002 | itinerary_001 | 3 | 1 | ACTIVITY | Cappadocia Hot Air Balloon | Sunrise hot air balloon flight over Göreme Valley followed by traditional breakfast. |
-| `product_itinerary_items` | item_003 | itinerary_001 | 6 | 1 | ACTIVITY | Bursa Grand Mosque | Explore historical Ottoman architecture and silk market in Bursa. |
+| Table                     | id       | itinerary_id  | day_number | sequence_number | item_type | title                      | description                                                                          |
+| ------------------------- | -------- | ------------- | ---------- | --------------- | --------- | -------------------------- | ------------------------------------------------------------------------------------ |
+| `product_itinerary_items` | item_001 | itinerary_001 | 1          | 1               | ACTIVITY  | Istanbul City Tour         | Arrive at Istanbul Airport, meet tour guide, visit Blue Mosque and Hagia Sophia.     |
+| `product_itinerary_items` | item_002 | itinerary_001 | 3          | 1               | ACTIVITY  | Cappadocia Hot Air Balloon | Sunrise hot air balloon flight over Göreme Valley followed by traditional breakfast. |
+| `product_itinerary_items` | item_003 | itinerary_001 | 6          | 1               | ACTIVITY  | Bursa Grand Mosque         | Explore historical Ottoman architecture and silk market in Bursa.                    |
 
 ---
 
@@ -576,11 +594,11 @@ erDiagram
     areas    ||--o{ product_locations : "area_id (City marker)"
 ```
 
-| Table | id | product_id | source_type | area_id | area_name | lat | lng | address | sort_order |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_locations` | loc_01 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440001 | Istanbul | 41.0082 | 28.9784 | Sultanahmet, Istanbul, Turkey | 1 |
-| `product_locations` | loc_02 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440002 | Cappadocia | 38.6431 | 34.8289 | Göreme, Nevşehir, Turkey | 2 |
-| `product_locations` | loc_03 | prod_turkey_01 | AREA | 550e8400-e29b-41d4-a716-446655440003 | Bursa | 40.1885 | 29.0610 | Osmangazi, Bursa, Turkey | 3 |
+| Table               | id     | product_id     | source_type | area_id                              | area_name  | lat     | lng     | address                       | sort_order |
+| ------------------- | ------ | -------------- | ----------- | ------------------------------------ | ---------- | ------- | ------- | ----------------------------- | ---------- |
+| `product_locations` | loc_01 | prod_turkey_01 | AREA        | 550e8400-e29b-41d4-a716-446655440001 | Istanbul   | 41.0082 | 28.9784 | Sultanahmet, Istanbul, Turkey | 1          |
+| `product_locations` | loc_02 | prod_turkey_01 | AREA        | 550e8400-e29b-41d4-a716-446655440002 | Cappadocia | 38.6431 | 34.8289 | Göreme, Nevşehir, Turkey      | 2          |
+| `product_locations` | loc_03 | prod_turkey_01 | AREA        | 550e8400-e29b-41d4-a716-446655440003 | Bursa      | 40.1885 | 29.0610 | Osmangazi, Bursa, Turkey      | 3          |
 
 ---
 
@@ -620,15 +638,15 @@ erDiagram
     product_media ||--o{ product_media_usages: "media_id"
 ```
 
-| Table | id | product_id | source_upload_id | media_type | file_name | file_size_bytes | mime_type | object_key | url |
-|---|---|---|---|---|---|---|---|---|---|
-| `product_media` | media_001 | prod_turkey_01 | upl_img_001 | IMAGE | hot-air-balloon.jpg | 1845200 | image/jpeg | products/turkey/hot-air-balloon.jpg | https://cdn.hobiholidays.com/products/turkey/hot-air-balloon.jpg |
-| `product_media` | media_002 | prod_turkey_01 | upl_doc_001 | PDF | Turkey-Wonders-Official-Itinerary.pdf | 4613734 | application/pdf | products/turkey/docs/turkey-wonders-itinerary.pdf | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf |
+| Table           | id        | product_id     | source_upload_id | media_type | file_name                             | file_size_bytes | mime_type       | object_key                                        | url                                                              |
+| --------------- | --------- | -------------- | ---------------- | ---------- | ------------------------------------- | --------------- | --------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `product_media` | media_001 | prod_turkey_01 | upl_img_001      | IMAGE      | hot-air-balloon.jpg                   | 1845200         | image/jpeg      | products/turkey/hot-air-balloon.jpg               | https://cdn.hobiholidays.com/products/turkey/hot-air-balloon.jpg |
+| `product_media` | media_002 | prod_turkey_01 | upl_doc_001      | PDF        | Turkey-Wonders-Official-Itinerary.pdf | 4613734         | application/pdf | products/turkey/docs/turkey-wonders-itinerary.pdf | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf |
 
-| Table | id | media_id | target_type | target_id | usage_context | sort_order |
-|---|---|---|---|---|---|---|
-| `product_media_usages` | usage_001 | media_001 | PRODUCT | prod_turkey_01 | COVER | 1 |
-| `product_media_usages` | usage_002 | media_002 | PRODUCT | prod_turkey_01 | ITINERARY_PDF | 1 |
+| Table                  | id        | media_id  | target_type | target_id      | usage_context | sort_order |
+| ---------------------- | --------- | --------- | ----------- | -------------- | ------------- | ---------- |
+| `product_media_usages` | usage_001 | media_001 | PRODUCT     | prod_turkey_01 | COVER         | 1          |
+| `product_media_usages` | usage_002 | media_002 | PRODUCT     | prod_turkey_01 | ITINERARY_PDF | 1          |
 
 ---
 
@@ -655,10 +673,10 @@ erDiagram
     products ||--o{ product_supplementaries : "product_id"
 ```
 
-| Table | id | product_id | target_type | target_id | category | content | sort_order |
-|---|---|---|---|---|---|---|---|
-| `product_supplementaries` | supp_001 | prod_turkey_01 | PRODUCT | prod_turkey_01 | IMPORTANT_INFO | Valid passport with at least 6 months validity required from travel date. | 1 |
-| `product_supplementaries` | supp_002 | prod_turkey_01 | PRODUCT | prod_turkey_01 | INCLUDED | 4-star hotel accommodations, domestic flights, daily breakfast, and English-speaking guide. | 2 |
+| Table                     | id       | product_id     | target_type | target_id      | category       | content                                                                                     | sort_order |
+| ------------------------- | -------- | -------------- | ----------- | -------------- | -------------- | ------------------------------------------------------------------------------------------- | ---------- |
+| `product_supplementaries` | supp_001 | prod_turkey_01 | PRODUCT     | prod_turkey_01 | IMPORTANT_INFO | Valid passport with at least 6 months validity required from travel date.                   | 1          |
+| `product_supplementaries` | supp_002 | prod_turkey_01 | PRODUCT     | prod_turkey_01 | INCLUDED       | 4-star hotel accommodations, domestic flights, daily breakfast, and English-speaking guide. | 2          |
 
 ---
 
@@ -711,15 +729,15 @@ flowchart LR
 
 ## 📐 Index Summary
 
-| Index Name | Table | Columns | Type | Purpose |
-|---|---|---|---|---|
-| `idx_products_status` | `products` | `(listing_status)` WHERE `deleted_at IS NULL` | B-Tree partial | Active product listing |
-| `idx_products_slug_trgm` | `products` | `(slug)` | GIN pg_trgm | Destination text search |
-| `idx_variants_product_id` | `product_variants` | `(product_id)` | B-Tree | Variant lookup by product |
-| `idx_variants_name_trgm` | `product_variants` | `(name)` | GIN pg_trgm | Variant name text search |
-| `idx_trips_variant_id` | `product_trips` | `(variant_id)` | B-Tree | Trip lookup by variant |
-| `idx_trips_search` | `product_trips` | `(start_date, max_quota)` WHERE `status = 'ACTIVE'` | B-Tree partial | Search date+pax filter |
-| `idx_locations_area_name_trgm` | `product_locations` | `(area_name)` | GIN pg_trgm | Destination text search |
-| `idx_media_usages_target` | `product_media_usages` | `(target_type, target_id)` | B-Tree | Polymorphic media lookup |
-| `uq_media_usages_product_itinerary_pdf` | `product_media_usages` | `(target_id, usage_context)` WHERE `target_type = 'PRODUCT' AND usage_context = 'ITINERARY_PDF'` | B-Tree unique partial | Enforce strict 1:1 single itinerary PDF per product |
-| `idx_supplementaries_target` | `product_supplementaries` | `(target_type, target_id)` | B-Tree | Polymorphic content lookup |
+| Index Name                              | Table                     | Columns                                                                                          | Type                  | Purpose                                             |
+| --------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------- |
+| `idx_products_status`                   | `products`                | `(listing_status)` WHERE `deleted_at IS NULL`                                                    | B-Tree partial        | Active product listing                              |
+| `idx_products_slug_trgm`                | `products`                | `(slug)`                                                                                         | GIN pg_trgm           | Destination text search                             |
+| `idx_variants_product_id`               | `product_variants`        | `(product_id)`                                                                                   | B-Tree                | Variant lookup by product                           |
+| `idx_variants_name_trgm`                | `product_variants`        | `(name)`                                                                                         | GIN pg_trgm           | Variant name text search                            |
+| `idx_trips_variant_id`                  | `product_trips`           | `(variant_id)`                                                                                   | B-Tree                | Trip lookup by variant                              |
+| `idx_trips_search`                      | `product_trips`           | `(start_date, max_quota)` WHERE `status = 'ACTIVE'`                                              | B-Tree partial        | Search date+pax filter                              |
+| `idx_locations_area_name_trgm`          | `product_locations`       | `(area_name)`                                                                                    | GIN pg_trgm           | Destination text search                             |
+| `idx_media_usages_target`               | `product_media_usages`    | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic media lookup                            |
+| `uq_media_usages_product_itinerary_pdf` | `product_media_usages`    | `(target_id, usage_context)` WHERE `target_type = 'PRODUCT' AND usage_context = 'ITINERARY_PDF'` | B-Tree unique partial | Enforce strict 1:1 single itinerary PDF per product |
+| `idx_supplementaries_target`            | `product_supplementaries` | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic content lookup                          |

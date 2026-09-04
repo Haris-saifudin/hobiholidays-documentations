@@ -5,11 +5,11 @@
 
 **Document Map:**
 
-| Document | Responsibility |
-|---|-----------|
-| **This file** | Hierarchy mental model, ERDs, engineering principles, GWE sample data, relationship reference |
-| [Product Technical Design](./product-technical-design.md) | **Complete DDL schema** (authoritative), per-table ERDs, Turkey Wonders sample data |
-| [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL search query, indexing strategy |
+| Document                                                       | Responsibility                                                                                |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **This file**                                                  | Hierarchy mental model, ERDs, engineering principles, GWE sample data, relationship reference |
+| [Product Technical Design](./product-technical-design.md)      | **Complete DDL schema** (authoritative), per-table ERDs, Turkey Wonders sample data           |
+| [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL search query, indexing strategy                                      |
 
 ---
 
@@ -67,41 +67,48 @@ products
 
 ### Variant Types & Frontend Presentation
 
-| `variant_type` | Purpose & Characteristics | Real-World Example in Hobiholidays | UI Badging on All Tours Card |
-|---|---|---|---|
-| **`STANDARD`** | Core year-round package with fixed recurring departures; unaffected by seasonal or promotional gimmicks. | *Turkey Wonders Classic 9D*, *GWE Classic All-Year* | None / `⭐ Classic` |
-| **`SEASONAL`** | Tied strictly to natural seasons & regional climate windows (Spring, Summer, Autumn, Winter). | *GWE Spring 2026*, *Korea Autumn Leaves*, *Hokkaido Winter* | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` |
-| **`THEMED`** | Centered around special events, foliage, festivals, or cultural attractions. | *Tulip Edition (Keukenhof)*, *Japan Sakura*, *Christmas Market* | `🌷 Tulip Edition` / `🎌 Festival` |
-| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns. | *Early Bird Eropa 2026*, *Flash Sale Swiss 29,5 Jt* | `🔥 Flash Sale` / `⚡ Early Bird` |
+| `variant_type`    | Purpose & Characteristics                                                                                | Real-World Example in Hobiholidays                              | UI Badging on All Tours Card            |
+| ----------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------- |
+| **`STANDARD`**    | Core year-round package with fixed recurring departures; unaffected by seasonal or promotional gimmicks. | _Turkey Wonders Classic 9D_, _GWE Classic All-Year_             | None / `⭐ Classic`                     |
+| **`SEASONAL`**    | Tied strictly to natural seasons & regional climate windows (Spring, Summer, Autumn, Winter).            | _GWE Spring 2026_, _Korea Autumn Leaves_, _Hokkaido Winter_     | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` |
+| **`THEMED`**      | Centered around special events, foliage, festivals, or cultural attractions.                             | _Tulip Edition (Keukenhof)_, _Japan Sakura_, _Christmas Market_ | `🌷 Tulip Edition` / `🎌 Festival`      |
+| **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns.                          | _Early Bird Europe 2026_, _Flash Sale Switzerland IDR 29.5M_    | `🔥 Flash Sale` / `⚡ Early Bird`       |
 
 ---
 
 ## 🏗️ Engineering Principles
 
 ### 1. Cascade Integrity
+
 All FK relationships use `ON DELETE CASCADE` downward through the hierarchy. Deleting a product auto-removes all its variants, their trips, and pricings in a single transactional operation.
 
 ### 2. Duration Inheritance
+
 `product_variants.duration_days / duration_nights` are **nullable**. `NULL` = inherit from `product_journeys`. Overrides are explicitly set on the variant row. Application layer must resolve using `COALESCE(pv.duration_days, pj.duration_days)`.
 
 ### 3. Quota Concurrency
+
 `product_trips.max_quota` is the ceiling. During booking, use **Pessimistic Locking** (`SELECT ... FOR UPDATE`) on the trip row to prevent race conditions. Track `booked_count` in a separate `product_trip_bookings` table; never mutate `max_quota`.
 
 ### 4. Trip-Scoped Departures
+
 `product_trips` are owned by a **variant**, not directly by a product. This is an intentional design decision: it allows different variants under the same product umbrella (e.g., "Spring" vs "Summer") to have entirely independent departure calendars, quotas, and pricing.
 
 ### 5. Polymorphic Target Resolution
+
 Media usages and supplementary content target entities via `(target_type, target_id)`. Valid target types in this hierarchy:
 
-| `target_type` | Resolves to |
-|---|---|
-| `PRODUCT` | `products.id` |
-| `VARIANT` | `product_variants.id` |
-| `TRIP` | `product_trips.id` |
+| `target_type`    | Resolves to                  |
+| ---------------- | ---------------------------- |
+| `PRODUCT`        | `products.id`                |
+| `VARIANT`        | `product_variants.id`        |
+| `TRIP`           | `product_trips.id`           |
 | `ITINERARY_ITEM` | `product_itinerary_items.id` |
 
 ### 6. Itinerary PDF Ownership & Media Handling (1 Product = 1 PDF File)
+
 The official downloadable itinerary PDF brochure is managed through the centralized `product_media` asset subsystem and anchored at the **Product (L1)** level:
+
 - **Centralized Asset Storage:** PDF brochures are stored in `product_media` with `media_type = 'PDF'`, capturing `file_name`, `file_size_bytes`, and `mime_type = 'application/pdf'` for UI file badges and browser download headers (`Content-Disposition`).
 - **Database-Enforced 1:1 Cardinality:** A partial unique index on `product_media_usages` (`uq_media_usages_product_itinerary_pdf`) guarantees that a product can have at most **one** active `ITINERARY_PDF` attachment:
   ```sql
@@ -121,19 +128,19 @@ The official downloadable itinerary PDF brochure is managed through the centrali
 
 Key schema decisions specific to this hierarchy:
 
-| Decision | Detail |
-|---|---|
-| `product_variants.duration_days` nullable | `NULL` = inherit from `product_journeys` via `COALESCE` |
-| `product_variants.variant_type` classification | Enforced via `CHECK (variant_type IN ('STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL'))` |
-| `listing_status` lifecycle states | Enforced via `CHECK (listing_status IN ('DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'))` |
-| `nationality_scope` pricing & journey tiers | Enforced via `CHECK (nationality_scope IN ('ALL', 'DOMESTIC', 'INTERNATIONAL'))` |
-| `UNIQUE(variant_id, start_date)` on `product_trips` | One departure per variant per calendar date |
-| `UNIQUE(trip_id, nationality_scope)` on `product_trip_pricings` | One price row per trip per nationality scope |
-| `CHECK (end_date > start_date)` on `product_trips` | DB-level sanity guard on date windows |
-| `CHECK (status IN ('ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'))` | DB-level trip lifecycle guard |
-| `CHECK (selling_price > 0 AND base_price >= selling_price)` | DB-level price sanity guard |
-| Audit timestamps (`created_at`, `updated_at`) | Enforced on every table (`NOT NULL DEFAULT CURRENT_TIMESTAMP`) with trigger automation |
-| Soft deletes (`deleted_at`) | Nullable on master entities (`products`, `product_variants`) with partial indexing |
+| Decision                                                         | Detail                                                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `product_variants.duration_days` nullable                        | `NULL` = inherit from `product_journeys` via `COALESCE`                                                             |
+| `product_variants.variant_type` classification                   | Enforced via `CHECK (variant_type IN ('STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL'))`                            |
+| `listing_status` lifecycle states                                | Enforced via `CHECK (listing_status IN ('DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'))` |
+| `nationality_scope` pricing & journey tiers                      | Enforced via `CHECK (nationality_scope IN ('ALL', 'DOMESTIC', 'INTERNATIONAL'))`                                    |
+| `UNIQUE(variant_id, start_date)` on `product_trips`              | One departure per variant per calendar date                                                                         |
+| `UNIQUE(trip_id, nationality_scope)` on `product_trip_pricings`  | One price row per trip per nationality scope                                                                        |
+| `CHECK (end_date > start_date)` on `product_trips`               | DB-level sanity guard on date windows                                                                               |
+| `CHECK (status IN ('ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'))` | DB-level trip lifecycle guard                                                                                       |
+| `CHECK (selling_price > 0 AND base_price >= selling_price)`      | DB-level price sanity guard                                                                                         |
+| Audit timestamps (`created_at`, `updated_at`)                    | Enforced on every table (`NOT NULL DEFAULT CURRENT_TIMESTAMP`) with trigger automation                              |
+| Soft deletes (`deleted_at`)                                      | Nullable on master entities (`products`, `product_variants`) with partial indexing                                  |
 
 ---
 
@@ -410,27 +417,27 @@ flowchart LR
 
 ### `products`
 
-| id | product_type | code | slug | itinerary_pdf_url | listing_status |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| prod_gwe_01 | JOURNEY | GWE | grand-west-europe | https://cdn.hobiholidays.com/docs/itineraries/gwe-official.pdf | ACTIVE |
+| id          | product_type | code | slug              | itinerary_pdf_url                                              | listing_status |
+| :---------- | :----------- | :--- | :---------------- | :------------------------------------------------------------- | :------------- |
+| prod_gwe_01 | JOURNEY      | GWE  | grand-west-europe | https://cdn.hobiholidays.com/docs/itineraries/gwe-official.pdf | ACTIVE         |
 
 ### `product_journeys`
 
-| product_id | nationality_scope | duration_days | duration_nights |
-| :--- | :--- | :--- | :--- |
-| prod_gwe_01 | ALL | 7 | 6 |
+| product_id  | nationality_scope | duration_days | duration_nights |
+| :---------- | :---------------- | :------------ | :-------------- |
+| prod_gwe_01 | ALL               | 7             | 6               |
 
 ---
 
 ### `product_variants`
 
-| id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| var_gwe_std_26 | prod_gwe_01 | STANDARD | GWE Classic All-Year | gwe-classic-all-year | GWE-STD-2026 | NULL (7) | NULL (6) | ACTIVE |
-| var_gwe_spr_26 | prod_gwe_01 | SEASONAL | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
-| var_gwe_sum_26 | prod_gwe_01 | SEASONAL | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
-| var_tulip_26 | prod_gwe_01 | THEMED | Tulip Edition | tulip | GWE-TLP-2026 | 8 (override) | 7 (override) | ACTIVE |
-| var_gwe_eb_26 | prod_gwe_01 | PROMOTIONAL | GWE Early Bird 2026 | gwe-early-bird-2026 | GWE-EB-2026 | NULL (7) | NULL (6) | ACTIVE |
+| id             | product_id  | variant_type | name                 | slug                 | code         | duration_days | duration_nights | listing_status |
+| :------------- | :---------- | :----------- | :------------------- | :------------------- | :----------- | :------------ | :-------------- | :------------- |
+| var_gwe_std_26 | prod_gwe_01 | STANDARD     | GWE Classic All-Year | gwe-classic-all-year | GWE-STD-2026 | NULL (7)      | NULL (6)        | ACTIVE         |
+| var_gwe_spr_26 | prod_gwe_01 | SEASONAL     | GWE Spring 2026      | gwe-spring-2026      | GWE-SPR-2026 | NULL (7)      | NULL (6)        | ACTIVE         |
+| var_gwe_sum_26 | prod_gwe_01 | SEASONAL     | GWE Summer 2026      | gwe-summer-2026      | GWE-SUM-2026 | NULL (7)      | NULL (6)        | ACTIVE         |
+| var_tulip_26   | prod_gwe_01 | THEMED       | Tulip Edition        | tulip                | GWE-TLP-2026 | 8 (override)  | 7 (override)    | ACTIVE         |
+| var_gwe_eb_26  | prod_gwe_01 | PROMOTIONAL  | GWE Early Bird 2026  | gwe-early-bird-2026  | GWE-EB-2026  | NULL (7)      | NULL (6)        | ACTIVE         |
 
 > 💡 `NULL` duration_days means the variant **inherits** from `product_journeys` via `COALESCE`.
 > **All Tours** page renders **5 cards** — one per variant across all 4 `variant_type` classifications.
@@ -439,34 +446,34 @@ flowchart LR
 
 ### `product_trips`
 
-| id | variant_id | start_date | end_date | min_quota | max_quota | status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| trip_std_01 | var_gwe_std_26 | 2026-08-05 | 2026-08-12 | 5 | 30 | ACTIVE |
-| trip_spr_01 | var_gwe_spr_26 | 2026-09-10 | 2026-09-17 | 5 | 30 | ACTIVE |
-| trip_spr_02 | var_gwe_spr_26 | 2026-09-17 | 2026-09-24 | 5 | 30 | ACTIVE |
-| trip_sum_01 | var_gwe_sum_26 | 2026-07-10 | 2026-07-17 | 5 | 30 | ACTIVE |
-| trip_sum_02 | var_gwe_sum_26 | 2026-07-17 | 2026-07-24 | 5 | 30 | ACTIVE |
-| trip_tlp_01 | var_tulip_26 | 2026-09-10 | 2026-09-17 | 5 | 25 | ACTIVE |
-| trip_tlp_02 | var_tulip_26 | 2026-09-17 | 2026-09-24 | 5 | 25 | ACTIVE |
-| trip_eb_01 | var_gwe_eb_26 | 2026-10-15 | 2026-10-22 | 5 | 15 | ACTIVE |
+| id          | variant_id     | start_date | end_date   | min_quota | max_quota | status |
+| :---------- | :------------- | :--------- | :--------- | :-------- | :-------- | :----- |
+| trip_std_01 | var_gwe_std_26 | 2026-08-05 | 2026-08-12 | 5         | 30        | ACTIVE |
+| trip_spr_01 | var_gwe_spr_26 | 2026-09-10 | 2026-09-17 | 5         | 30        | ACTIVE |
+| trip_spr_02 | var_gwe_spr_26 | 2026-09-17 | 2026-09-24 | 5         | 30        | ACTIVE |
+| trip_sum_01 | var_gwe_sum_26 | 2026-07-10 | 2026-07-17 | 5         | 30        | ACTIVE |
+| trip_sum_02 | var_gwe_sum_26 | 2026-07-17 | 2026-07-24 | 5         | 30        | ACTIVE |
+| trip_tlp_01 | var_tulip_26   | 2026-09-10 | 2026-09-17 | 5         | 25        | ACTIVE |
+| trip_tlp_02 | var_tulip_26   | 2026-09-17 | 2026-09-24 | 5         | 25        | ACTIVE |
+| trip_eb_01  | var_gwe_eb_26  | 2026-10-15 | 2026-10-22 | 5         | 15        | ACTIVE |
 
 ---
 
 ### `product_trip_pricings`
 
-| id | trip_id | nationality_scope | base_price | selling_price |
-| :--- | :--- | :--- | :--- | :--- |
-| price_std_01_dom | trip_std_01 | DOMESTIC | 33000000.00 | 29500000.00 |
-| price_std_01_int | trip_std_01 | INTERNATIONAL | 39000000.00 | 35000000.00 |
-| price_spr_01_dom | trip_spr_01 | DOMESTIC | 32000000.00 | 28000000.00 |
-| price_spr_01_int | trip_spr_01 | INTERNATIONAL | 38000000.00 | 34000000.00 |
-| price_spr_02_all | trip_spr_02 | ALL | 32000000.00 | 28000000.00 |
-| price_sum_01_dom | trip_sum_01 | DOMESTIC | 30000000.00 | 26500000.00 |
-| price_sum_01_int | trip_sum_01 | INTERNATIONAL | 36000000.00 | 32500000.00 |
-| price_sum_02_all | trip_sum_02 | ALL | 30000000.00 | 26500000.00 |
-| price_tlp_01_all | trip_tlp_01 | ALL | 35000000.00 | 31000000.00 |
-| price_tlp_02_all | trip_tlp_02 | ALL | 35000000.00 | 31000000.00 |
-| price_eb_01_all | trip_eb_01 | ALL | 29500000.00 | 24500000.00 |
+| id               | trip_id     | nationality_scope | base_price  | selling_price |
+| :--------------- | :---------- | :---------------- | :---------- | :------------ |
+| price_std_01_dom | trip_std_01 | DOMESTIC          | 33000000.00 | 29500000.00   |
+| price_std_01_int | trip_std_01 | INTERNATIONAL     | 39000000.00 | 35000000.00   |
+| price_spr_01_dom | trip_spr_01 | DOMESTIC          | 32000000.00 | 28000000.00   |
+| price_spr_01_int | trip_spr_01 | INTERNATIONAL     | 38000000.00 | 34000000.00   |
+| price_spr_02_all | trip_spr_02 | ALL               | 32000000.00 | 28000000.00   |
+| price_sum_01_dom | trip_sum_01 | DOMESTIC          | 30000000.00 | 26500000.00   |
+| price_sum_01_int | trip_sum_01 | INTERNATIONAL     | 36000000.00 | 32500000.00   |
+| price_sum_02_all | trip_sum_02 | ALL               | 30000000.00 | 26500000.00   |
+| price_tlp_01_all | trip_tlp_01 | ALL               | 35000000.00 | 31000000.00   |
+| price_tlp_02_all | trip_tlp_02 | ALL               | 35000000.00 | 31000000.00   |
+| price_eb_01_all  | trip_eb_01  | ALL               | 29500000.00 | 24500000.00   |
 
 ---
 
@@ -490,22 +497,22 @@ product_variants
 
 ## 🗺️ Complete Relationship Reference
 
-| Relationship | Type | Cardinality | Constraint |
-| :--- | :--- | :--- | :--- |
-| `products` → `product_journeys` | Hard FK | 1 : 1 | `ON DELETE CASCADE` |
-| `products` → `itinerary_pdf` | Embedded / Column | 1 : 1 | Stored at L1 (`itinerary_pdf_url`) |
-| `products` → `product_variants` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `product_variants` → `product_trips` | Hard FK | 1 : N | `ON DELETE CASCADE` + `UNIQUE(variant_id, start_date)` |
-| `product_trips` → `product_trip_pricings` | Hard FK | 1 : N | `ON DELETE CASCADE` + `UNIQUE(trip_id, nationality_scope)` |
-| `products` → `product_itineraries` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `product_itineraries` → `product_itinerary_items` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `products` → `product_locations` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `areas` → `product_locations` | Logical FK | 1 : N | Inter-domain reference (City destination marker) |
-| `products` → `product_media` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `product_media` → `product_media_usages` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `products` → `product_supplementaries` | Hard FK | 1 : N | `ON DELETE CASCADE` |
-| `product_media_usages.target_id` → `*` | **Polymorphic** | N : 1 | App-layer enforced |
-| `product_supplementaries.target_id` → `*` | **Polymorphic** | N : 1 | App-layer enforced |
+| Relationship                                      | Type              | Cardinality | Constraint                                                 |
+| :------------------------------------------------ | :---------------- | :---------- | :--------------------------------------------------------- |
+| `products` → `product_journeys`                   | Hard FK           | 1 : 1       | `ON DELETE CASCADE`                                        |
+| `products` → `itinerary_pdf`                      | Embedded / Column | 1 : 1       | Stored at L1 (`itinerary_pdf_url`)                         |
+| `products` → `product_variants`                   | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `product_variants` → `product_trips`              | Hard FK           | 1 : N       | `ON DELETE CASCADE` + `UNIQUE(variant_id, start_date)`     |
+| `product_trips` → `product_trip_pricings`         | Hard FK           | 1 : N       | `ON DELETE CASCADE` + `UNIQUE(trip_id, nationality_scope)` |
+| `products` → `product_itineraries`                | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `product_itineraries` → `product_itinerary_items` | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `products` → `product_locations`                  | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `areas` → `product_locations`                     | Logical FK        | 1 : N       | Inter-domain reference (City destination marker)           |
+| `products` → `product_media`                      | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `product_media` → `product_media_usages`          | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `products` → `product_supplementaries`            | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `product_media_usages.target_id` → `*`            | **Polymorphic**   | N : 1       | App-layer enforced                                         |
+| `product_supplementaries.target_id` → `*`         | **Polymorphic**   | N : 1       | App-layer enforced                                         |
 
 ---
 
@@ -516,9 +523,11 @@ product_variants
 
 > [!NOTE]
 > `product_journeys` stores the **base duration** at the product level. It is not deleted or superseded. The application layer resolves effective duration using:
+>
 > ```sql
 > COALESCE(pv.duration_days, pj.duration_days) AS duration_days
 > ```
+>
 > This allows individual variants to override duration without touching the product-level default.
 
 > [!NOTE]

@@ -13,11 +13,11 @@
 
 Based on the core search widget, we have three primary filter parameters. Here is how they map to the existing database schema:
 
-| UI Field             | Description                                 | Target Table & Column                           | Filter Logic                                                                 |
-| :------------------- | :------------------------------------------ | :---------------------------------------------- | :--------------------------------------------------------------------------- |
-| **Where To?**        | Destination keyword (e.g., "Europe, Japan") | `product_locations.area_name` / `products.slug` | `ILIKE` or Full-Text Search (FTS) matching the area or product name.         |
-| **Departure Month**  | Selected Month of Travel                    | `product_trips.start_date`                      | Date range query extracting all trips falling within the selected month.     |
-| **Guest Count (Pax)**| Number of passengers                        | `product_trips.max_quota`                       | Numeric comparison (`>=`) to ensure the trip has enough available quota.     |
+| UI Field              | Description                                 | Target Table & Column                           | Filter Logic                                                             |
+| :-------------------- | :------------------------------------------ | :---------------------------------------------- | :----------------------------------------------------------------------- |
+| **Where To?**         | Destination keyword (e.g., "Europe, Japan") | `product_locations.area_name` / `products.slug` | `ILIKE` or Full-Text Search (FTS) matching the area or product name.     |
+| **Departure Month**   | Selected Month of Travel                    | `product_trips.start_date`                      | Date range query extracting all trips falling within the selected month. |
+| **Guest Count (Pax)** | Number of passengers                        | `product_trips.max_quota`                       | Numeric comparison (`>=`) to ensure the trip has enough available quota. |
 
 ---
 
@@ -27,14 +27,8 @@ The frontend will send a `GET` request with query parameters. The backend will v
 
 ```typescript
 // search-trip.dto.ts
-import {
-  IsOptional,
-  IsString,
-  IsInt,
-  Min,
-  IsIn,
-} from "class-validator";
-  import { Type } from "class-transformer";
+import { IsOptional, IsString, IsInt, Min, IsIn } from "class-validator";
+import { Type } from "class-transformer";
 
 export class SearchTripDto {
   @IsOptional()
@@ -86,7 +80,7 @@ SELECT
 FROM product_variants pv
 -- Join parent product
 INNER JOIN products p ON p.id = pv.product_id
--- 1. Join Locations to filter by "Mau Ke Mana?"
+-- 1. Join Locations to filter by "Where To?" (destination text)
 INNER JOIN product_locations pl ON pl.product_id = p.id
 -- 2. Join Trips to filter by Date, Status, and Pax
 INNER JOIN product_trips pt ON pt.variant_id = pv.id
@@ -100,8 +94,8 @@ WHERE
     AND pt.status = 'ACTIVE'
     -- Destination Filter (Triggered if 'destination' is provided)
     AND (
-        pl.area_name ILIKE '%Jepang%'
-        OR p.slug ILIKE '%Jepang%'
+        pl.area_name ILIKE '%Japan%'
+        OR p.slug ILIKE '%japan%'
     )
     -- Departure Month Filter (Triggered if 'departureMonth' is '2026-10')
     AND pt.start_date >= '2026-10-01'
@@ -115,7 +109,7 @@ GROUP BY pv.id, pv.name, pv.slug, pv.variant_type, p.id;
 >
 > **Note on Quota:** In a real-world scenario, `max_quota` represents total capacity. The query should ideally check `(max_quota - booked_quota) >= requested_pax`. For this data model, we filter directly against the available limits.
 >
-> **Result:** The query returns one row **per variant** (not per product). For example, searching "Eropa, September 2026" would return `GWE Spring 2026` (`SEASONAL`) and `Tulip` (`THEMED`) as separate listing cards.
+> **Result:** The query returns one row **per variant** (not per product). For example, searching "Europe, September 2026" would return `GWE Spring 2026` (`SEASONAL`) and `Tulip` (`THEMED`) as separate listing cards.
 
 ---
 
