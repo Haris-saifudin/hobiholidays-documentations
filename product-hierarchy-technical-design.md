@@ -9,7 +9,9 @@
 | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | **This file**                                                  | Hierarchy mental model, ERDs, engineering principles, GWE sample data, relationship reference |
 | [Product Technical Design](./product-technical-design.md)      | **Complete DDL schema** (authoritative), per-table ERDs, Turkey Wonders sample data           |
+| [Product Media](./product-media-technical-design.md)           | Media asset repository, polymorphic usages, presigned uploads, CDN delivery                   |
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL search query, indexing strategy                                      |
+| [Area Domain](./area-technical-design.md)                      | 3-tier geography tree (Continent → Country → City), PostGIS spatial model                     |
 
 ---
 
@@ -154,6 +156,7 @@ erDiagram
         uuid      id              PK
         varchar   product_type    "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
+        varchar   name
         varchar   slug
         varchar   listing_status  "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
         timestamp created_at
@@ -213,6 +216,7 @@ erDiagram
         uuid      id                PK
         varchar   product_type      "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
+        varchar   name
         varchar   slug
         varchar   itinerary_pdf_url "1 product : 1 PDF file"
         varchar   listing_status    "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
@@ -313,6 +317,7 @@ erDiagram
     product_media {
         uuid      id               PK
         uuid      product_id       FK
+        varchar   storage_provider "DATABASE | S3 | CLOUDFLARE_R2"
         varchar   source_upload_id
         varchar   media_type       "IMAGE | VIDEO | PDF"
         varchar   file_name        "original filename"
@@ -486,11 +491,14 @@ flowchart LR
 
 ```
 product_variants
-  → products           (parent product, status check)
-  → product_journeys   (COALESCE duration fallback)
-  → product_locations  (destination text filter)
-  → product_trips      (date range + pax quota filter)
-  → product_trip_pricings (MIN starting price per result card)
+  → products              (parent product status check, product name filter)
+  → product_journeys      (COALESCE duration fallback)
+  → product_locations     (destination markers)
+    → areas city          (City destination marker)
+    → areas country       (Country parent)
+    → areas continent     (Continent root)
+  → product_trips         (date range + total pack / pax quota filter)
+  → product_trip_pricings (price range filter [minPrice..maxPrice] + MIN starting price per card)
 ```
 
 ---

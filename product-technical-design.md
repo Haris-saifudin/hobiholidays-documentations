@@ -11,7 +11,11 @@
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | **This file**                                                  | Full DDL schema, per-table ERDs, sample data, architecture principles        |
 | [Product Hierarchy](./product-hierarchy-technical-design.md)   | 3-level hierarchy mental model, full-domain ERD, hierarchy sample data (GWE) |
+| [Product Media](./product-media-technical-design.md)           | Media asset repository, polymorphic usages, presigned uploads, CDN delivery  |
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL query, indexing strategy                            |
+| [Area Domain](./area-technical-design.md)                      | 3-tier geography tree (Continent → Country → City), PostGIS spatial model    |
+| [SEO Architecture](./seo-technical-design.md)                  | SEO metadata, Schema.org rich snippets, Next.js dynamic metadata             |
+| [API Contracts](./contracts/README.md)                         | Complete REST API contracts, split sub-resources, request/response DTOs      |
 
 ---
 
@@ -143,6 +147,7 @@ CREATE TABLE products (
     id                UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
     product_type      VARCHAR(50)  NOT NULL,                    -- JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR
     code              VARCHAR(100) UNIQUE NOT NULL,             -- e.g. GWE
+    name              VARCHAR(255) NOT NULL,                    -- e.g. Grand West Europe, Turkey Wonders
     slug              VARCHAR(255) UNIQUE NOT NULL,             -- e.g. grand-west-europe
     itinerary_pdf_url VARCHAR(500),                             -- 1 Product : 1 PDF Itinerary file (shared across variants)
     listing_status    VARCHAR(50)  NOT NULL DEFAULT 'DRAFT',    -- DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED
@@ -154,6 +159,7 @@ CREATE TABLE products (
     CONSTRAINT chk_products_type           CHECK (product_type IN ('JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'))
 );
 CREATE INDEX idx_products_status      ON products(listing_status) WHERE deleted_at IS NULL;
+CREATE INDEX idx_products_name_trgm   ON products USING GIN (name gin_trgm_ops);
 CREATE INDEX idx_products_slug_trgm   ON products USING GIN (slug gin_trgm_ops);
 
 -- Base journey metadata (1:1 with products)
@@ -198,6 +204,7 @@ CREATE INDEX idx_variants_product_id   ON product_variants(product_id);
 CREATE INDEX idx_variants_slug         ON product_variants(slug);
 CREATE INDEX idx_variants_status       ON product_variants(listing_status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_variants_name_trgm    ON product_variants USING GIN (name gin_trgm_ops);
+CREATE INDEX idx_variants_slug_trgm    ON product_variants USING GIN (slug gin_trgm_ops);
 
 
 -- =========================================================================
@@ -222,7 +229,7 @@ CREATE TABLE product_trips (
 );
 CREATE INDEX idx_trips_variant_id ON product_trips(variant_id);
 -- Partial index: search queries only touch ACTIVE trips
-CREATE INDEX idx_trips_search     ON product_trips(start_date, max_quota)
+CREATE INDEX idx_trips_search     ON product_trips(start_date, min_quota, max_quota)
     WHERE status = 'ACTIVE';
 
 -- Pricing tiers per trip (e.g. per nationality scope)
@@ -239,6 +246,7 @@ CREATE TABLE product_trip_pricings (
     CONSTRAINT chk_price_sanity        CHECK  (selling_price > 0 AND base_price >= selling_price),
     CONSTRAINT chk_pricing_nationality CHECK  (nationality_scope IN ('ALL', 'DOMESTIC', 'INTERNATIONAL'))
 );
+CREATE INDEX idx_pricings_search       ON product_trip_pricings(trip_id, nationality_scope, selling_price);
 
 
 -- =========================================================================
@@ -293,7 +301,8 @@ CREATE TABLE product_locations (
 
     CONSTRAINT chk_locations_source_type CHECK (source_type IN ('AREA', 'MANUAL'))
 );
-CREATE INDEX idx_locations_product_id    ON product_locations(product_id);
+CREATE INDEX idx_locations_product_id     ON product_locations(product_id);
+CREATE INDEX idx_locations_area_id        ON product_locations(area_id);
 CREATE INDEX idx_locations_area_name_trgm ON product_locations USING GIN (area_name gin_trgm_ops);
 
 
@@ -302,21 +311,34 @@ CREATE INDEX idx_locations_area_name_trgm ON product_locations USING GIN (area_n
 -- Media assets are owned at the product level.
 -- Usage slots (cover, gallery, thumbnail, itinerary_pdf) target entities polymorphically.
 -- Supports images, videos, and document assets (PDF brochures).
+-- Detailed Architecture: See [Product Media Technical Design](./product-media-technical-design.md)
 -- =========================================================================
 CREATE TABLE product_media (
     id               UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
     product_id       UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    source_upload_id VARCHAR(255),                          -- CDN / upload service ref
+    storage_provider VARCHAR(50)  NOT NULL DEFAULT 'DATABASE', -- DATABASE (Phase 1) | S3 | CLOUDFLARE_R2 (Phase 2)
+    source_upload_id VARCHAR(255),                          -- External upload service or CDN reference ID
     media_type       VARCHAR(50)  NOT NULL,                  -- IMAGE | VIDEO | PDF
-    file_name        VARCHAR(255),                          -- Original / download filename (e.g. Turkey-Wonders-Itinerary.pdf)
-    file_size_bytes  BIGINT,                                -- File size in bytes for UI preview
-    mime_type        VARCHAR(100),                          -- e.g. application/pdf, image/jpeg, video/mp4
-    object_key       VARCHAR(500) NOT NULL,                 -- S3/GCS object key
-    url              VARCHAR(500) NOT NULL,                 -- CDN public URL
+    file_name        VARCHAR(255) NOT NULL,                 -- Original / download filename (e.g. Turkey-Wonders-Itinerary.pdf)
+    file_size_bytes  BIGINT       NOT NULL,                 -- File size in bytes for UI preview
+    mime_type        VARCHAR(100) NOT NULL,                 -- e.g. application/pdf, image/jpeg, video/mp4
+    object_key       VARCHAR(500) NULL,                     -- S3/GCS key (NULL in Phase 1, required in Phase 2)
+    url              VARCHAR(500) NOT NULL,                 -- Stream URL (Phase 1) or CDN URL (Phase 2)
     created_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT chk_media_type CHECK (media_type IN ('IMAGE', 'VIDEO', 'PDF'))
+    CONSTRAINT chk_media_type             CHECK (media_type IN ('IMAGE', 'VIDEO', 'PDF')),
+    CONSTRAINT chk_media_storage_provider CHECK (storage_provider IN ('DATABASE', 'S3', 'CLOUDFLARE_R2'))
+);
+CREATE INDEX idx_media_product_id ON product_media(product_id);
+CREATE INDEX idx_media_type       ON product_media(media_type);
+CREATE INDEX idx_media_storage    ON product_media(storage_provider);
+
+-- Dedicated table for Phase 1 in-database binary storage (BYTEA)
+CREATE TABLE product_media_blobs (
+    media_id   UUID      PRIMARY KEY REFERENCES product_media(id) ON DELETE CASCADE,
+    file_data  BYTEA     NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE product_media_usages (
@@ -339,6 +361,11 @@ CREATE INDEX idx_media_usages_target ON product_media_usages(target_type, target
 CREATE UNIQUE INDEX uq_media_usages_product_itinerary_pdf
     ON product_media_usages(target_id, usage_context)
     WHERE target_type = 'PRODUCT' AND usage_context = 'ITINERARY_PDF';
+
+-- Enforce single COVER image per entity target
+CREATE UNIQUE INDEX uq_media_usages_single_cover
+    ON product_media_usages(target_id, usage_context)
+    WHERE usage_context = 'COVER';
 
 
 -- =========================================================================
@@ -363,7 +390,34 @@ CREATE INDEX idx_supplementaries_target ON product_supplementaries(target_type, 
 
 
 -- =========================================================================
--- 8. AUDIT TRIGGER AUTOMATION
+-- 8. SEO METADATA (polymorphic)
+-- Custom search engine optimization and Open Graph tags per entity.
+-- Detailed Architecture: See [SEO Technical Design](./seo-technical-design.md)
+-- =========================================================================
+CREATE TABLE seo_metadata (
+    id               UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    target_type      VARCHAR(50)  NOT NULL,                  -- PRODUCT | VARIANT | AREA
+    target_id        UUID         NOT NULL,                  -- Polymorphic FK
+    meta_title       VARCHAR(255),                          -- Custom <title> tag
+    meta_description TEXT,                                  -- Custom meta description
+    canonical_url    VARCHAR(500),                          -- Canonical URL override
+    og_title         VARCHAR(255),                          -- Open Graph title
+    og_description   TEXT,                                  -- Open Graph description
+    og_image_url     VARCHAR(500),                          -- Social sharing banner
+    no_index         BOOLEAN      NOT NULL DEFAULT FALSE,   -- Crawler noindex flag
+    no_follow        BOOLEAN      NOT NULL DEFAULT FALSE,   -- Crawler nofollow flag
+    structured_data  JSONB,                                 -- Schema.org overrides
+    created_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_seo_target_type CHECK (target_type IN ('PRODUCT', 'VARIANT', 'AREA')),
+    CONSTRAINT uq_seo_target       UNIQUE (target_type, target_id)
+);
+CREATE INDEX idx_seo_target ON seo_metadata(target_type, target_id);
+
+
+-- =========================================================================
+-- 9. AUDIT TRIGGER AUTOMATION
 -- PostgreSQL trigger function to automatically update `updated_at` timestamps
 -- upon row mutation across all domain entities.
 -- =========================================================================
@@ -387,6 +441,7 @@ CREATE TRIGGER trg_product_locations_updated_at    BEFORE UPDATE ON product_loca
 CREATE TRIGGER trg_product_media_updated_at        BEFORE UPDATE ON product_media        FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_media_usages_updated_at BEFORE UPDATE ON product_media_usages FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_supplementaries_updated_at BEFORE UPDATE ON product_supplementaries FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
+CREATE TRIGGER trg_seo_metadata_updated_at         BEFORE UPDATE ON seo_metadata         FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 ```
 
 ---
@@ -407,6 +462,7 @@ erDiagram
         uuid      id                PK
         varchar   product_type      "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
+        varchar   name
         varchar   slug
         varchar   itinerary_pdf_url "1 product : 1 PDF file"
         varchar   listing_status    "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
@@ -612,14 +668,21 @@ erDiagram
     product_media {
         uuid      id               PK
         uuid      product_id       FK
+        varchar   storage_provider "DATABASE | S3 | CLOUDFLARE_R2"
         varchar   media_type       "IMAGE | VIDEO | PDF"
         varchar   file_name        "original filename"
         bigint    file_size_bytes  "bytes"
         varchar   mime_type        "application/pdf etc"
-        varchar   object_key
-        varchar   url
+        varchar   object_key       "nullable in Phase 1"
+        varchar   url              "stream or CDN URL"
         timestamp created_at
         timestamp updated_at
+    }
+
+    product_media_blobs {
+        uuid      media_id         PK "FK to product_media.id"
+        bytea     file_data        "binary data (Phase 1)"
+        timestamp created_at
     }
 
     product_media_usages {
@@ -633,14 +696,15 @@ erDiagram
         timestamp updated_at
     }
 
-    products      ||--o{ product_media       : "product_id"
-    product_media ||--o{ product_media_usages: "media_id"
+    products            ||--o{ product_media       : "product_id"
+    product_media       ||--o| product_media_blobs : "binary data (Phase 1)"
+    product_media       ||--o{ product_media_usages: "media_id"
 ```
 
-| Table           | id        | product_id     | source_upload_id | media_type | file_name                             | file_size_bytes | mime_type       | object_key                                        | url                                                              |
+| Table           | id        | product_id     | storage_provider | media_type | file_name                             | file_size_bytes | mime_type       | object_key                                        | url                                                              |
 | --------------- | --------- | -------------- | ---------------- | ---------- | ------------------------------------- | --------------- | --------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
-| `product_media` | media_001 | prod_turkey_01 | upl_img_001      | IMAGE      | hot-air-balloon.jpg                   | 1845200         | image/jpeg      | products/turkey/hot-air-balloon.jpg               | https://cdn.hobiholidays.com/products/turkey/hot-air-balloon.jpg |
-| `product_media` | media_002 | prod_turkey_01 | upl_doc_001      | PDF        | Turkey-Wonders-Official-Itinerary.pdf | 4613734         | application/pdf | products/turkey/docs/turkey-wonders-itinerary.pdf | https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf |
+| `product_media` | media_001 | prod_turkey_01 | DATABASE         | IMAGE      | hot-air-balloon.jpg                   | 1845200         | image/jpeg      | NULL                                              | /api/v1/media/media_001/stream                                   |
+| `product_media` | media_002 | prod_turkey_01 | DATABASE         | PDF        | Turkey-Wonders-Official-Itinerary.pdf | 4613734         | application/pdf | NULL                                              | /api/v1/media/media_002/download                                 |
 
 | Table                  | id        | media_id  | target_type | target_id      | usage_context | sort_order |
 | ---------------------- | --------- | --------- | ----------- | -------------- | ------------- | ---------- |
@@ -662,7 +726,7 @@ erDiagram
         uuid      product_id  FK
         varchar   target_type "PRODUCT | VARIANT | TRIP"
         uuid      target_id   "polymorphic"
-        varchar   category    "INCLUDED | EXCLUDED | IMPORTANT_INFO"
+        varchar   category    "INCLUDED | EXCLUDED | IMPORTANT_INFO | NOTE"
         text      content
         int       sort_order
         timestamp created_at
@@ -731,12 +795,19 @@ flowchart LR
 | Index Name                              | Table                     | Columns                                                                                          | Type                  | Purpose                                             |
 | --------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------- |
 | `idx_products_status`                   | `products`                | `(listing_status)` WHERE `deleted_at IS NULL`                                                    | B-Tree partial        | Active product listing                              |
+| `idx_products_name_trgm`                | `products`                | `(name)`                                                                                         | GIN pg_trgm           | Search by product name                              |
 | `idx_products_slug_trgm`                | `products`                | `(slug)`                                                                                         | GIN pg_trgm           | Destination text search                             |
 | `idx_variants_product_id`               | `product_variants`        | `(product_id)`                                                                                   | B-Tree                | Variant lookup by product                           |
 | `idx_variants_name_trgm`                | `product_variants`        | `(name)`                                                                                         | GIN pg_trgm           | Variant name text search                            |
+| `idx_variants_slug_trgm`               | `product_variants`        | `(slug)`                                                                                         | GIN pg_trgm           | Variant slug text search                            |
 | `idx_trips_variant_id`                  | `product_trips`           | `(variant_id)`                                                                                   | B-Tree                | Trip lookup by variant                              |
-| `idx_trips_search`                      | `product_trips`           | `(start_date, max_quota)` WHERE `status = 'ACTIVE'`                                              | B-Tree partial        | Search date+pax filter                              |
+| `idx_trips_search`                      | `product_trips`           | `(start_date, min_quota, max_quota)` WHERE `status = 'ACTIVE'`                                   | B-Tree partial        | Search date+total pack (quota) filter               |
+| `idx_pricings_search`                   | `product_trip_pricings`   | `(trip_id, nationality_scope, selling_price)`                                                    | B-Tree                | Price range filter and starting price lookup        |
+| `idx_locations_product_id`              | `product_locations`       | `(product_id)`                                                                                   | B-Tree                | Location lookup by product                          |
+| `idx_locations_area_id`                 | `product_locations`       | `(area_id)`                                                                                      | B-Tree                | Join to Area hierarchy (City -> Country -> Contin.) |
 | `idx_locations_area_name_trgm`          | `product_locations`       | `(area_name)`                                                                                    | GIN pg_trgm           | Destination text search                             |
 | `idx_media_usages_target`               | `product_media_usages`    | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic media lookup                            |
 | `uq_media_usages_product_itinerary_pdf` | `product_media_usages`    | `(target_id, usage_context)` WHERE `target_type = 'PRODUCT' AND usage_context = 'ITINERARY_PDF'` | B-Tree unique partial | Enforce strict 1:1 single itinerary PDF per product |
+| `uq_media_usages_single_cover`          | `product_media_usages`    | `(target_id, usage_context)` WHERE `usage_context = 'COVER'`                                     | B-Tree unique partial | Enforce single COVER image per entity target        |
 | `idx_supplementaries_target`            | `product_supplementaries` | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic content lookup                          |
+| `idx_seo_target`                        | `seo_metadata`            | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic SEO metadata lookup                     |

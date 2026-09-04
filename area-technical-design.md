@@ -5,6 +5,12 @@
 >
 > _Engineered for High Scalability, Hierarchical Tree Traversal, and optimized for a NestJS + PostgreSQL stack._
 
+> **See Also:**
+> - [Product Technical Design](./product-technical-design.md) — Cross-domain `product_locations` reference
+> - [Search & Filter Architecture](./product-search-filter-technical-design.md) — Area hierarchy joins in search SQL
+> - [SEO Technical Design](./seo-technical-design.md) — Destination landing page SEO (`target_type = 'AREA'`)
+> - [Area Domain Contracts](./contracts/area-contract.md) — API endpoints, autocomplete, destination landing
+
 ---
 
 ## 🏗️ Architecture, Scalability & Engineering Principles
