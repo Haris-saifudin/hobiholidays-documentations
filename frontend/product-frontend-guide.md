@@ -1,10 +1,10 @@
 # Product Detail Page (PDP) — Next.js Frontend Implementation Guide
 
 > **Pillar 4: Next.js Frontend Implementation**
-> Frontend implementation guide for the Variant Detail Page (PDP) located at `app/tours/[productSlug]/[variantSlug]/page.tsx`. Demonstrates asynchronous tabbed UI rendering, split sub-resource data fetching with React Suspense, official itinerary PDF brochure downloader, and breadcrumbs.
+> Frontend implementation guide for the Variant Detail Page (PDP) located at `app/tours/[productSlug]/[variantSlug]/page.tsx`. Demonstrates asynchronous tabbed UI rendering, Variant default itinerary with Trip override badges, Age-band pricing selector with itemized inclusion breakdown drawers, Add-on selectors, and official itinerary PDF brochure downloader.
 >
-> **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)
-> **API Contract:** [Product Contracts](../contracts/product-contract.md)
+> **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)  
+> **API Contract:** [Product Contracts](../contracts/product-contract.md)  
 > **Backend Guide:** [Product Backend Guide](../backend/product-backend-guide.md)
 
 ---
@@ -18,16 +18,19 @@ The Variant Detail Page (PDP) presents the master brand narrative alongside vari
 │ Breadcrumbs: Home > Tours > Europe > Grand West Europe Spring 2026      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ [Hero Image & Gallery Carousel]             │ [Sticky Booking Card]     │
-│ Title: Grand West Europe Spring 2026        │ Price: IDR 34.500.000     │
-│ Duration: 11 Days / 10 Nights               │ Departure Date Selector   │
-│ Code: GWE-SPR-2026   [🌸 Spring Edition]    │ Quota: 8 Seats Remaining  │
+│ Title: Grand West Europe Spring 2026        │ Price: IDR 28.000.000     │
+│ Category: Classic Series (Tour Series)      │ [Age Band: Adult / Infant] │
+│ Duration: 11 Days / 9 Nights                │ [Rincian Komponen Biaya ↗]│
+│ Code: GWE-SPR-2026   [🌸 Spring Edition]    │ Departure Date Selector   │
+│                                             │ Quota: 8 Seats Remaining  │
+│                                             │ [Add-on Extras Selector]  │
 │                                             │ [Book This Tour Button]   │
 │                                             │ [📄 Download PDF Brochure]│
 ├─────────────────────────────────────────────┴───────────────────────────┤
-│ [Tab Navigation: Overview | Itinerary | Locations | Inclusions/Exclusions]│
+│ [Tab Navigation: Itinerary (Master / Override) | Locations | Inclusions]│
 │                                                                         │
 │ <Suspense fallback={<ItinerarySkeleton />}>                             │
-│   <DayByDayItineraryList productId={variant.productId} />               │
+│   <DayByDayItineraryList variantId={variant.id} tripId={selectedTripId} │
 │ </Suspense>                                                             │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -73,7 +76,7 @@ export default async function VariantDetailPage({ params }: Props) {
         items={[
           { label: 'Home', href: '/' },
           { label: 'Tours', href: '/tours' },
-          { label: variant.productName, href: `/tours/${params.productSlug}` },
+          { label: variant.product.name, href: `/tours/${params.productSlug}` },
           { label: variant.name, href: '' },
         ]}
       />
@@ -81,7 +84,7 @@ export default async function VariantDetailPage({ params }: Props) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-6">
         {/* Left Column: Media & Core Info (2 cols) */}
         <div className="lg:col-span-2 space-y-6">
-          <GalleryCarousel productId={variant.productId} />
+          <GalleryCarousel productId={variant.product.id} />
 
           <div className="border-b pb-4">
             <div className="flex items-center gap-3">
@@ -89,6 +92,11 @@ export default async function VariantDetailPage({ params }: Props) {
               <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
                 {variant.variantType}
               </span>
+              {variant.product.category && (
+                <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                  {variant.product.category.name}
+                </span>
+              )}
             </div>
             <p className="text-gray-600 mt-2 text-lg">
               {variant.durationDays} Hari / {variant.durationNights} Malam
@@ -96,16 +104,23 @@ export default async function VariantDetailPage({ params }: Props) {
           </div>
 
           {/* Tabbed Content with Streaming Suspense */}
-          <ItineraryTabs productId={variant.productId} />
+          <ItineraryTabs
+            variantId={variant.id}
+            defaultItinerary={variant.itinerary}
+          />
         </div>
 
-        {/* Right Column: Sticky Booking & Brochure Download (1 col) */}
+        {/* Right Column: Sticky Booking, Pricing Breakdown & Add-ons (1 col) */}
         <div className="space-y-6">
-          <BookingCard variant={variant} trips={variant.trips} />
+          <BookingCard
+            variant={variant}
+            trips={variant.trips}
+            addons={variant.addons}
+          />
 
-          {variant.itineraryPdfUrl && (
+          {(variant.itineraryPdfUrl || variant.product.itineraryPdfUrl) && (
             <BrochureDownloadButton
-              url={variant.itineraryPdfUrl}
+              url={variant.itineraryPdfUrl || variant.product.itineraryPdfUrl}
               tourName={variant.name}
             />
           )}
@@ -118,7 +133,202 @@ export default async function VariantDetailPage({ params }: Props) {
 
 ---
 
+## 💰 All-Inclusive Pricing Drawer & Inclusions
+
+Allows travelers to view the all-inclusive package pricing tier details (e.g. Adult GWE Summer) along with quota allocation and supplementary package inclusions:
+
+```tsx
+// components/tour/pricing-breakdown-drawer.tsx
+'use client';
+
+import { useState } from 'react';
+
+export interface SupplementaryInclusion {
+  category: 'INCLUDED' | 'EXCLUDED' | 'IMPORTANT_INFO';
+  content: string;
+}
+
+export interface PricingComponentItem {
+  id: string;
+  name: string;
+  description?: string;
+  amount?: number;
+  isIncluded: boolean;
+  sortOrder?: number;
+}
+
+export interface PricingTier {
+  id: string;
+  ageBand: 'ADULT' | 'INFANT';
+  basePrice: number;
+  sellingPrice: number;
+  consumesQuota: boolean;
+  components?: PricingComponentItem[];
+}
+
+interface Props {
+  pricing: PricingTier;
+  inclusions?: SupplementaryInclusion[];
+}
+
+export function PricingBreakdownDrawer({ pricing, inclusions = [] }: Props) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const formatIDR = (amt: number) =>
+    new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amt);
+
+  return (
+    <div>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="text-xs text-blue-600 hover:underline font-medium flex items-center gap-1"
+      >
+        Lihat Rincian Biaya Paket ↗
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
+          <div className="w-full max-w-md bg-white h-full p-6 overflow-y-auto shadow-2xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between border-b pb-4">
+                <h3 className="text-lg font-bold text-gray-900">
+                  Rincian Biaya: {pricing.ageBand === 'ADULT' ? 'Dewasa' : 'Bayi / Infant'}
+                </h3>
+                <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-3 p-2.5 rounded-lg text-xs font-medium bg-slate-50 text-slate-700">
+                {pricing.consumesQuota ? (
+                  <span>✓ Mengalokasikan 1 kursi/kuota peserta grup</span>
+                ) : (
+                  <span className="text-emerald-700">✓ Lap infant (tidak mengalokasikan kuota kursi terpisah)</span>
+                )}
+              </div>
+
+              {/* Itemized Cost Breakdown Components */}
+              {pricing.components && pricing.components.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Komponen & Rincian Fasilitas</p>
+                  <div className="space-y-2">
+                    {pricing.components.map((comp) => (
+                      <div key={comp.id} className="p-3 rounded-xl border border-gray-100 bg-slate-50 flex items-start justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium text-gray-900 flex items-center gap-1.5">
+                            <span className="text-emerald-600 font-bold">✓</span>
+                            {comp.name}
+                          </p>
+                          {comp.description && (
+                            <p className="text-xs text-gray-500 pl-4">{comp.description}</p>
+                          )}
+                        </div>
+                        {comp.amount && (
+                          <span className="text-xs font-semibold text-slate-600 shrink-0">
+                            {formatIDR(comp.amount)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* General Inclusions */}
+              {inclusions.some((inc) => inc.category === 'INCLUDED') && (
+                <div className="mt-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Fasilitas Termasuk Tambahan</p>
+                  {inclusions.filter((inc) => inc.category === 'INCLUDED').map((inc, idx) => (
+                    <div key={idx} className="p-3 rounded-xl border border-gray-100 bg-slate-50 flex items-start gap-2">
+                      <span className="text-emerald-600 font-bold">✓</span>
+                      <p className="text-sm text-gray-800">{inc.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t pt-4 mt-6">
+              <div className="flex justify-between items-center text-base font-bold">
+                <span>Total Harga Paket All-Inclusive</span>
+                <span className="text-blue-600 text-xl">{formatIDR(pricing.sellingPrice)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## 🧩 Add-on Extra Options Selector
+
+Add-ons are optional extras added on top of the full package base price:
+
+```tsx
+// components/tour/addon-selector.tsx
+'use client';
+
+export interface AddonItem {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string;
+  addonType?: string;
+  chargeType?: 'PER_PAX' | 'PER_ROOM' | 'PER_BOOKING';
+  price: number;
+  currency?: string;
+  applicableAgeBand?: 'ADULT' | 'INFANT' | null;
+  isMandatory?: boolean;
+  maxQuantity?: number;
+}
+
+interface Props {
+  addons: AddonItem[];
+  selectedAddons: Record<string, number>;
+  onChange: (addonId: string, qty: number) => void;
+}
+
+export function AddonSelector({ addons, selectedAddons, onChange }: Props) {
+  if (!addons || addons.length === 0) return null;
+
+  return (
+    <div className="space-y-3 pt-4 border-t">
+      <h4 className="text-sm font-bold text-gray-900">Tambahan Opsional (Add-on)</h4>
+      {addons.map((addon) => {
+        const qty = selectedAddons[addon.id] || 0;
+        const unitLabel = addon.chargeType === 'PER_ROOM' ? 'kamar' : 'orang';
+        return (
+          <div key={addon.id} className="p-3 rounded-xl border border-gray-100 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">{addon.name}</p>
+              <p className="text-xs text-gray-500">
+                +Rp {addon.price.toLocaleString('id-ID')} / {unitLabel}
+                {addon.applicableAgeBand && ` (${addon.applicableAgeBand === 'ADULT' ? 'Dewasa' : 'Bayi'})`}
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={qty > 0}
+              onChange={(e) => onChange(addon.id, e.target.checked ? 1 : 0)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+---
+
 ## 📄 Official Itinerary PDF Brochure Component
+
+> Itinerary PDF brochures are compiled externally by **ATW**. Hobiholidays does not generate PDFs internally; the application provides direct download access via the external ATW URL (`itineraryPdfUrl`).
 
 ```tsx
 // components/media/brochure-download-button.tsx
@@ -159,7 +369,7 @@ export function BrochureDownloadButton({ url, tourName }: Props) {
     <div className="p-4 border rounded-xl bg-slate-50 flex items-center justify-between">
       <div>
         <h4 className="font-semibold text-sm">Download Itinerary Resmi</h4>
-        <p className="text-xs text-gray-500">Format PDF • Lengkap dengan Jadwal & Ketentuan</p>
+        <p className="text-xs text-gray-500">Format PDF • Disusun resmi oleh ATW</p>
       </div>
       <button
         onClick={handleDownload}

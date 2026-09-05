@@ -1,10 +1,17 @@
 # Product Domain API Contracts
 
 > **Overview**
-> Complete REST API contract specifications for the Product Domain. In accordance with micro-frontend and clean REST standards, **Product retrieval is split into dedicated, granular sub-resource endpoints** (`/media`, `/itineraries`, `/locations`, `/variants`, `/supplementaries`, `/seo`) to eliminate payload bloat, support tabbed UI loading, and maximize edge cacheability.
+> Complete REST API contract specifications for the Product Domain. In accordance with micro-frontend and clean REST standards, **Product retrieval is split into dedicated, granular sub-resource endpoints** (`/media`, `/locations`, `/variants`, `/supplementaries`, `/seo`) to eliminate payload bloat, support tabbed UI loading, and maximize edge cacheability.
 >
-> **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)
-> **Backend Guide:** [Product Backend Guide](../backend/product-backend-guide.md)
+> **Core Architectural Principles:**
+> - **Category Taxonomy:** 2-tier parent-child category tree (`product_categories`) linked to Products.
+> - **Itinerary Hierarchy:** Owned at **Variant level (L2)** as default master itinerary, with optional override at **Trip level (L3)**.
+> - **Pricing & Add-on Architecture:** Base price is all-inclusive, scoped by age band (`ADULT`, `INFANT`) with dynamic `consumes_quota` boolean flag (infants may consume quota if seat is allocated). Excluded optional extras are modeled via `product_addons`.
+> - **Add-on Subsystem:** Full-price package base model with optional add-ons (`product_addons`) linked to Variants and optional Trip overrides.
+> - **Itinerary PDF Brochure:** Generated externally by ATW. Endpoints store and return the CDN/ATW URL (`itineraryPdfUrl`), with Variant override falling back to Base Product.
+>
+> **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)  
+> **Backend Guide:** [Product Backend Guide](../backend/product-backend-guide.md)  
 > **Frontend Guide:** [Product Frontend Guide](../frontend/product-frontend-guide.md)
 
 ---
@@ -13,40 +20,112 @@
 
 | Category | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
-| **Base Product** | `POST` | `/api/v1/products` | Create new master product + journey duration |
-| | `GET` | `/api/v1/products` | List all master products with pagination & status |
-| | `GET` | `/api/v1/products/:id` | **Base Product Details** (headline, duration, brochure URL) |
-| | `PUT` | `/api/v1/products/:id` | Update master product base info |
+| **Product Categories** | `GET` | `/api/v1/categories/tree` | Global 2-tier parent-child category tree |
+| | `GET` | `/api/v1/categories` | List all product categories |
+| | `POST` | `/api/v1/categories` | Create product category (parent or child) |
+| **Base Product (L1)** | `POST` | `/api/v1/products` | Create new master product + journey duration + category binding |
+| | `GET` | `/api/v1/products` | List all master products with pagination, category filter & status |
+| | `GET` | `/api/v1/products/:id` | **Base Product Details** (headline, category, duration, brochure URL) |
+| | `PUT` | `/api/v1/products/:id` | Update master product base info & category |
 | | `DELETE`| `/api/v1/products/:id` | Soft delete master product |
 | **Split Sub-Resources** | `GET` | `/api/v1/products/:id/media` | **Product Media** (covers, galleries, brochure) |
-| | `GET` | `/api/v1/products/:id/itineraries`| **Product Itinerary** (day-by-day stops & activities) |
-| | `GET` | `/api/v1/products/:id/locations` | **Product Locations** (destination markers & Area tree) |
+| | `GET` | `/api/v1/products/:id/locations` | **Product Locations** (destination markers & 4-tier Area tree) |
 | | `GET` | `/api/v1/products/:id/variants` | **Product Variants** (L2 packages under this master product) |
 | | `GET` | `/api/v1/products/:id/supplementaries`| **Product Supplementary** (inclusions, exclusions, terms) |
 | | `GET` | `/api/v1/products/:id/seo` | **Product SEO Metadata** (custom meta title, description, OG) |
 | | `PUT` | `/api/v1/products/:id/seo` | Upsert product custom SEO metadata |
-| **Sub-Resource Mutations**| `POST` | `/api/v1/products/:id/itineraries` | Create/replace master itinerary |
-| | `POST` | `/api/v1/products/:id/locations` | Attach destination marker |
+| **Sub-Resource Mutations**| `POST` | `/api/v1/products/:id/locations` | Attach destination marker (4-tier Area) |
 | | `POST` | `/api/v1/products/:id/supplementaries`| Add supplementary block |
 | **L2 Variants** | `POST` | `/api/v1/products/:id/variants` | Create variant (Standard, Seasonal, Themed, etc.) |
 | | `GET` | `/api/v1/variants/:id` | Fetch specific variant details |
 | | `PUT` | `/api/v1/variants/:id` | Update variant title, slug, duration override |
-| **L3 Trips & Pricing** | `GET` | `/api/v1/variants/:variantId/trips`| List trips (dated departures & quotas) |
+| **L2 Variant Itinerary** | `GET` | `/api/v1/variants/:variantId/itinerary` | Fetch default master itinerary for variant |
+| | `PUT` | `/api/v1/variants/:variantId/itinerary` | Upsert/replace default master itinerary for variant |
+| **L2 Variant Add-ons** | `GET` | `/api/v1/variants/:variantId/addons` | List optional add-ons configured for variant |
+| | `POST` | `/api/v1/variants/:variantId/addons` | Create optional add-on for variant |
+| | `PUT` | `/api/v1/addons/:id` | Update add-on details |
+| | `DELETE`| `/api/v1/addons/:id` | Soft delete add-on |
+| **L3 Trips** | `GET` | `/api/v1/variants/:variantId/trips`| List trips (dated departures & quotas) |
 | | `POST` | `/api/v1/variants/:variantId/trips`| Create dated departure window |
-| | `GET` | `/api/v1/trips/:tripId/pricings` | List pricing tiers (ALL, DOMESTIC, INTERNATIONAL) |
-| | `PUT` | `/api/v1/trips/:tripId/pricings` | Upsert pricing tier |
+| **L3 Trip Itinerary** | `GET` | `/api/v1/trips/:tripId/itinerary` | Fetch trip-specific itinerary override (if any) |
+| | `PUT` | `/api/v1/trips/:tripId/itinerary` | Upsert trip-specific itinerary override |
+| | `DELETE`| `/api/v1/trips/:tripId/itinerary` | Remove override (reverts to variant default) |
+| | `GET` | `/api/v1/trips/:tripId/effective-itinerary`| Resolved itinerary (`trip ?? variant`) with `isOverride` flag |
+| **L3 Trip Pricing** | `GET` | `/api/v1/trips/:tripId/pricings` | List pricing tiers by age band with itemized components |
+| | `PUT` | `/api/v1/trips/:tripId/pricings` | Upsert pricing tier with breakdown components |
+| **Promotional Badges** | `GET` | `/api/v1/badges` | List all active promotional badges |
+| | `POST` | `/api/v1/badges` | Create promotional badge (Admin) |
+| | `PUT` | `/api/v1/badges/:id` | Update promotional badge (Admin) |
+| | `DELETE`| `/api/v1/badges/:id` | Soft delete/deactivate promotional badge (Admin) |
+| | `POST` | `/api/v1/variants/:id/badges` | Attach promotional badges to variant |
+| | `DELETE`| `/api/v1/variants/:id/badges/:badgeId` | Detach promotional badge from variant |
 
 ---
 
-## 1. Base Product Endpoints
+## 1. Product Category Endpoints
 
-### 1.1 List Products (`GET /api/v1/products`)
-Returns a paginated list of master products, filterable by listing status and product type.
+### 1.1 Category Hierarchy Tree (`GET /api/v1/categories/tree`)
+Returns the complete 2-tier parent-child category tree. Cached with 24-hour TTL for storefront navigation and catalog filtering.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Category tree retrieved successfully",
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440080",
+      "name": "Tour Series",
+      "slug": "tour-series",
+      "description": "Standard scheduled group departure series",
+      "sortOrder": 1,
+      "children": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440081",
+          "name": "Classic Series",
+          "slug": "classic-series",
+          "description": "Flagship classic itineraries covering iconic highlights",
+          "sortOrder": 1
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440082",
+          "name": "Flower Season",
+          "slug": "flower-season",
+          "description": "Seasonal bloom and festival focused journeys",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440090",
+      "name": "Special Interest",
+      "slug": "special-interest",
+      "description": "Themed and interest-based experiential travels",
+      "sortOrder": 2,
+      "children": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440091",
+          "name": "Culinary & Wine",
+          "slug": "culinary-wine",
+          "description": "Gastronomic experiences and vineyard visits",
+          "sortOrder": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 2. Base Product Endpoints
+
+### 2.1 List Products (`GET /api/v1/products`)
+Returns a paginated list of master products, filterable by status, product type, and category.
 
 #### Query Parameters (`ListProductsDto`)
-
 ```typescript
-import { IsOptional, IsString, IsIn, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsIn, IsInt, Min, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListProductsDto {
@@ -59,6 +138,14 @@ export class ListProductsDto {
   @IsString()
   @IsIn(['JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'])
   productType?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  categorySlug?: string;
 
   @IsOptional()
   @IsString()
@@ -98,28 +185,22 @@ export class ListProductsDto {
       "slug": "grand-west-europe",
       "productType": "JOURNEY",
       "listingStatus": "ACTIVE",
-      "durationDays": 7,
-      "durationNights": 6,
-      "nationalityScope": "ALL",
+      "category": {
+        "id": "550e8400-e29b-41d4-a716-446655440081",
+        "name": "Classic Series",
+        "slug": "classic-series"
+      },
+      "parentCategory": {
+        "id": "550e8400-e29b-41d4-a716-446655440080",
+        "name": "Tour Series",
+        "slug": "tour-series"
+      },
+      "durationDays": 11,
+      "durationNights": 9,
       "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
       "variantsCount": 5,
       "createdAt": "2026-09-04T08:00:00.000Z",
       "updatedAt": "2026-09-04T09:30:00.000Z"
-    },
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440011",
-      "code": "TURKEY-WONDERS",
-      "name": "Turkey Wonders",
-      "slug": "turkey-wonders",
-      "productType": "JOURNEY",
-      "listingStatus": "ACTIVE",
-      "durationDays": 9,
-      "durationNights": 8,
-      "nationalityScope": "ALL",
-      "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/turkey-wonders.pdf",
-      "variantsCount": 4,
-      "createdAt": "2026-09-04T08:30:00.000Z",
-      "updatedAt": "2026-09-04T10:00:00.000Z"
     }
   ]
 }
@@ -127,22 +208,25 @@ export class ListProductsDto {
 
 ---
 
-### 1.2 Create Product (`POST /api/v1/products`)
-Creates a new master tour product with initial base journey duration.
+### 2.2 Create Product (`POST /api/v1/products`)
+Creates a new master tour product with category binding and journey duration.
 
-#### Request DTO
+#### Request DTO (`CreateProductDto`)
 ```typescript
-import { IsString, IsIn, IsInt, Min, IsOptional } from 'class-validator';
+import { IsString, IsIn, IsInt, Min, IsUUID } from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
-  code: string; // e.g. "TURKEY-WONDERS"
+  code: string; // e.g. "GWE-MASTER"
 
   @IsString()
-  name: string; // e.g. "Turkey Wonders"
+  name: string; // e.g. "Grand West Europe"
 
   @IsString()
-  slug: string; // e.g. "turkey-wonders"
+  slug: string; // e.g. "grand-west-europe"
+
+  @IsUUID('4')
+  categoryId: string; // Child category UUID (parent_category_id auto-resolved by trigger)
 
   @IsString()
   @IsIn(['JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'])
@@ -150,16 +234,11 @@ export class CreateProductDto {
 
   @IsInt()
   @Min(1)
-  durationDays: number; // e.g. 9
+  durationDays: number; // e.g. 11
 
   @IsInt()
   @Min(0)
-  durationNights: number; // e.g. 7
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['ALL', 'DOMESTIC', 'INTERNATIONAL'])
-  nationalityScope?: 'ALL' | 'DOMESTIC' | 'INTERNATIONAL' = 'ALL';
+  durationNights: number; // e.g. 10
 }
 ```
 
@@ -170,15 +249,16 @@ export class CreateProductDto {
   "message": "Product created successfully",
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440010",
-    "code": "TURKEY-WONDERS",
-    "name": "Turkey Wonders",
-    "slug": "turkey-wonders",
+    "code": "GWE-MASTER",
+    "name": "Grand West Europe",
+    "slug": "grand-west-europe",
+    "categoryId": "550e8400-e29b-41d4-a716-446655440081",
+    "parentCategoryId": "550e8400-e29b-41d4-a716-446655440080",
     "productType": "JOURNEY",
     "listingStatus": "DRAFT",
-    "durationDays": 9,
-    "durationNights": 7,
-    "nationalityScope": "ALL",
-    "itineraryPdfUrl": null,
+    "durationDays": 11,
+    "durationNights": 10,
+    "itineraryPdfUrl": "https://atw-cdn.hobiholidays.com/brochures/gwe-master-brochure.pdf",
     "createdAt": "2026-09-04T10:00:00.000Z"
   }
 }
@@ -186,197 +266,10 @@ export class CreateProductDto {
 
 ---
 
-### 1.3 Get Base Product (`GET /api/v1/products/:id`)
-Fetches high-level headline information and base journey metadata. Does **not** include heavy nested collections (media, full itinerary, etc.).
+## 3. Split Sub-Resource Endpoints
 
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product retrieved successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440010",
-    "code": "GWE",
-    "name": "Grand West Europe",
-    "slug": "grand-west-europe",
-    "productType": "JOURNEY",
-    "listingStatus": "ACTIVE",
-    "durationDays": 11,
-    "durationNights": 9,
-    "nationalityScope": "ALL",
-    "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
-    "createdAt": "2026-09-04T08:00:00.000Z",
-    "updatedAt": "2026-09-04T09:30:00.000Z"
-  }
-}
-```
-
----
-
-### 1.4 Update Product (`PUT /api/v1/products/:id`)
-Updates mutable base product properties (name, headline, description, listing status).
-
-#### Request DTO (`UpdateProductDto`)
-```typescript
-import { IsString, IsIn, IsOptional } from 'class-validator';
-
-export class UpdateProductDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  headline?: string;
-
-  @IsOptional()
-  @IsString()
-  description?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'])
-  listingStatus?: string;
-}
-```
-
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product updated successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440010",
-    "code": "GWE",
-    "name": "Grand West Europe (Updated)",
-    "slug": "grand-west-europe",
-    "productType": "JOURNEY",
-    "listingStatus": "ACTIVE",
-    "headline": "Updated Europe Tour",
-    "description": "Updated tour overview",
-    "updatedAt": "2026-09-04T12:00:00.000Z"
-  }
-}
-```
-
----
-
-### 1.5 Delete Product (`DELETE /api/v1/products/:id`)
-Soft deletes the master product and archives its status.
-
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product deleted successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440010",
-    "deleted": true
-  }
-}
-```
-
----
-
-## 2. Split Sub-Resource Endpoints
-
-### 2.1 Get Product Media (`GET /api/v1/products/:id/media`)
-Returns all media assets attached to this product, logically grouped by usage context (`cover`, `gallery`, `itineraryPdf`).
-
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product media retrieved successfully",
-  "data": {
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "cover": {
-      "mediaId": "550e8400-e29b-41d4-a716-446655440050",
-      "url": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",
-      "fileName": "gwe-hero-paris.jpg",
-      "fileSizeBytes": 2410500,
-      "mimeType": "image/jpeg"
-    },
-    "gallery": [
-      {
-        "usageId": "550e8400-e29b-41d4-a716-446655440061",
-        "mediaId": "550e8400-e29b-41d4-a716-446655440051",
-        "url": "https://cdn.hobiholidays.com/products/gwe/amsterdam-canals.jpg",
-        "fileName": "amsterdam-canals.jpg",
-        "sortOrder": 1
-      },
-      {
-        "usageId": "550e8400-e29b-41d4-a716-446655440062",
-        "mediaId": "550e8400-e29b-41d4-a716-446655440052",
-        "url": "https://cdn.hobiholidays.com/products/gwe/brussels-atomium.jpg",
-        "fileName": "brussels-atomium.jpg",
-        "sortOrder": 2
-      }
-    ],
-    "itineraryPdf": {
-      "mediaId": "550e8400-e29b-41d4-a716-446655440055",
-      "url": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
-      "fileName": "GWE-Official-Brochure-2026.pdf",
-      "fileSizeBytes": 4613734,
-      "mimeType": "application/pdf"
-    }
-  }
-}
-```
-
----
-
-### 2.2 Get Product Itineraries (`GET /api/v1/products/:id/itineraries`)
-Returns the active master day-by-day itinerary and chronological item timeline.
-
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product itineraries retrieved successfully",
-  "data": {
-    "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "title": "Grand West Europe Signature 11D",
-    "daysCount": 11,
-    "items": [
-      {
-        "itemId": "550e8400-e29b-41d4-a716-446655440071",
-        "dayNumber": 1,
-        "title": "Jakarta - Amsterdam",
-        "description": "Gather at Soekarno-Hatta Airport for direct flight to Amsterdam.",
-        "meals": {
-          "breakfast": false,
-          "lunch": false,
-          "dinner": true
-        },
-        "accommodation": "In-flight",
-        "locationName": "Amsterdam",
-        "sortOrder": 0
-      },
-      {
-        "itemId": "550e8400-e29b-41d4-a716-446655440072",
-        "dayNumber": 2,
-        "title": "Arrival in Amsterdam & Canal Cruise",
-        "description": "Explore Zaanse Schans windmills, cheese factory, and take glass-topped canal cruise.",
-        "meals": {
-          "breakfast": true,
-          "lunch": true,
-          "dinner": true
-        },
-        "accommodation": "Van der Valk Hotel Amsterdam",
-        "locationName": "Amsterdam",
-        "sortOrder": 1
-      }
-    ]
-  }
-}
-```
-
----
-
-### 2.3 Get Product Locations (`GET /api/v1/products/:id/locations`)
-Returns destination markers associated with the product, resolved to the 3-tier Area domain hierarchy (**Continent → Country → City**).
+### 3.1 Get Product Locations (`GET /api/v1/products/:id/locations`)
+Returns destination markers linked to the 4-tier Area domain (**Continent → Sub Continent → Country → POI**).
 
 #### Success Response (200 OK)
 ```json
@@ -386,27 +279,15 @@ Returns destination markers associated with the product, resolved to the 3-tier 
   "data": [
     {
       "locationId": "550e8400-e29b-41d4-a716-446655440081",
-      "areaId": "550e8400-e29b-41d4-a716-446655440001",
-      "city": "Amsterdam",
+      "areaId": "550e8400-e29b-41d4-a716-446655440010",
+      "poi": "Keukenhof",
       "country": "Netherlands",
       "countryCode": "NL",
+      "subContinent": "Western Europe",
       "continent": "Europe",
-      "lat": 52.3676,
-      "lng": 4.9041,
-      "address": "Centraal & Canal Ring, Amsterdam, Netherlands",
+      "lat": 52.2698,
+      "lng": 4.5469,
       "sortOrder": 1
-    },
-    {
-      "locationId": "550e8400-e29b-41d4-a716-446655440082",
-      "areaId": "550e8400-e29b-41d4-a716-446655440002",
-      "city": "Paris",
-      "country": "France",
-      "countryCode": "FR",
-      "continent": "Europe",
-      "lat": 48.8566,
-      "lng": 2.3522,
-      "address": "Champs-Élysées & Eiffel, Paris, France",
-      "sortOrder": 2
     }
   ]
 }
@@ -414,304 +295,12 @@ Returns destination markers associated with the product, resolved to the 3-tier 
 
 ---
 
-### 2.4 Get Product Variants (`GET /api/v1/products/:id/variants`)
-Returns all L2 variants created under this master product, along with active starting price and trip counts.
+## 4. L2 Variant Endpoints & Master Itinerary
 
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product variants retrieved successfully",
-  "data": [
-    {
-      "variantId": "550e8400-e29b-41d4-a716-446655440020",
-      "code": "GWE-SPR-2026",
-      "name": "GWE Spring 2026",
-      "slug": "gwe-spring-2026",
-      "variantType": "SEASONAL",
-      "listingStatus": "ACTIVE",
-      "durationDays": 11,
-      "durationNights": 9,
-      "startingPrice": 28000000.00,
-      "activeTripsCount": 4
-    },
-    {
-      "variantId": "550e8400-e29b-41d4-a716-446655440021",
-      "code": "GWE-TLP-2026",
-      "name": "Tulip Keukenhof Special",
-      "slug": "tulip-keukenhof-special",
-      "variantType": "THEMED",
-      "listingStatus": "ACTIVE",
-      "durationDays": 9,
-      "durationNights": 7,
-      "startingPrice": 31000000.00,
-      "activeTripsCount": 2
-    }
-  ]
-}
-```
-
----
-
-### 2.5 Get Product Supplementaries (`GET /api/v1/products/:id/supplementaries`)
-Returns modular supplementary content blocks (inclusions, exclusions, visa requirements, terms).
-
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Product supplementaries retrieved successfully",
-  "data": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440091",
-      "category": "INCLUDED",
-      "title": "Paket Termasuk",
-      "content": "<ul><li>Tiket pesawat internasional PP kelas ekonomi</li><li>Akomodasi hotel bintang 4 setaraf</li><li>Makan sesuai itinerary</li><li>Tour Leader profesional dari Jakarta</li></ul>"
-    },
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440092",
-      "category": "EXCLUDED",
-      "title": "Paket Tidak Termasuk",
-      "content": "<ul><li>Biaya pembuatan Visa Schengen</li><li>Tipping Tour Leader & Supir (€7/hari/orang)</li><li>Pengeluaran pribadi</li></ul>"
-    },
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440093",
-      "category": "IMPORTANT_INFO",
-      "title": "Informasi Penting",
-      "content": "<p>Valid passport with at least 6 months validity required from travel date.</p>"
-    }
-  ]
-}
-```
-
----
-
-### 2.6 Get & Update Product SEO (`GET` & `PUT /api/v1/products/:id/seo`)
-
-#### Get SEO (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "SEO metadata retrieved successfully",
-  "data": {
-    "targetType": "PRODUCT",
-    "targetId": "550e8400-e29b-41d4-a716-446655440010",
-    "metaTitle": "Paket Tour Grand West Europe 11 Hari Murah | Hobiholidays",
-    "metaDescription": "Nikmati paket tour Grand West Europe 11D mengunjungi Belanda, Belgia, Prancis, dan Swiss dengan fasilitas premium.",
-    "canonicalUrl": "https://www.hobiholidays.com/tours/grand-west-europe",
-    "ogTitle": "Tour Grand West Europe 11D - Keberangkatan Pasti",
-    "ogDescription": "Paket liburan Eropa Barat terbaik bersama Hobiholidays.",
-    "ogImageUrl": "https://cdn.hobiholidays.com/products/gwe/og-gwe.jpg",
-    "noIndex": false,
-    "noFollow": false
-  }
-}
-```
-
-#### Update SEO Request DTO (`PUT /api/v1/products/:id/seo`)
-```typescript
-import { IsString, IsOptional, IsBoolean, IsUrl, MaxLength } from 'class-validator';
-
-export class UpdateProductSeoDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  metaTitle?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  metaDescription?: string;
-
-  @IsOptional()
-  @IsUrl()
-  canonicalUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  ogTitle?: string;
-
-  @IsOptional()
-  @IsString()
-  ogDescription?: string;
-
-  @IsOptional()
-  @IsUrl()
-  ogImageUrl?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  noIndex?: boolean = false;
-
-  @IsOptional()
-  @IsBoolean()
-  noFollow?: boolean = false;
-}
-```
-
----
-
-### 2.7 Create/Replace Itinerary (`POST /api/v1/products/:id/itineraries`)
-Creates or replaces the master itinerary structure for this product.
-
-#### Request DTO (`CreateItineraryDto`)
-```typescript
-import { IsString, IsIn, IsArray, ValidateNested, IsInt, Min } from 'class-validator';
-import { Type } from 'class-transformer';
-
-export class ItineraryItemDto {
-  @IsInt()
-  @Min(1)
-  dayNumber: number;
-
-  @IsInt()
-  @Min(1)
-  sequenceNumber: number;
-
-  @IsString()
-  @IsIn(['ACTIVITY', 'TRANSPORT', 'MEAL', 'ACCOMMODATION'])
-  itemType: 'ACTIVITY' | 'TRANSPORT' | 'MEAL' | 'ACCOMMODATION';
-
-  @IsString()
-  title: string;
-
-  @IsString()
-  description: string;
-}
-
-export class CreateItineraryDto {
-  @IsString()
-  @IsIn(['MERCHANT', 'INTERNAL'])
-  sourceType: 'MERCHANT' | 'INTERNAL' = 'INTERNAL';
-
-  @IsString()
-  @IsIn(['STANDARD', 'CUSTOM'])
-  itineraryType: 'STANDARD' | 'CUSTOM' = 'STANDARD';
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ItineraryItemDto)
-  items: ItineraryItemDto[];
-}
-```
-
-#### Success Response (201 Created)
-```json
-{
-  "statusCode": 201,
-  "message": "Itinerary created successfully",
-  "data": {
-    "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "sourceType": "INTERNAL",
-    "itineraryType": "STANDARD",
-    "totalItems": 2
-  }
-}
-```
-
----
-
-### 2.8 Attach Destination Location (`POST /api/v1/products/:id/locations`)
-Attaches a destination marker linking the product to a geographic area (City).
-
-#### Request DTO (`AttachLocationDto`)
-```typescript
-import { IsUUID, IsString, IsIn, IsNumber, IsOptional, IsInt, Min } from 'class-validator';
-
-export class AttachLocationDto {
-  @IsUUID('4')
-  areaId: string; // Must refer to an active area where area_type = 'CITY'
-
-  @IsString()
-  @IsIn(['AREA', 'MANUAL'])
-  sourceType: 'AREA' | 'MANUAL' = 'AREA';
-
-  @IsOptional()
-  @IsString()
-  areaName?: string;
-
-  @IsOptional()
-  @IsNumber()
-  lat?: number;
-
-  @IsOptional()
-  @IsNumber()
-  lng?: number;
-
-  @IsOptional()
-  @IsString()
-  address?: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number = 0;
-}
-```
-
-#### Success Response (201 Created)
-```json
-{
-  "statusCode": 201,
-  "message": "Location attached successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440081",
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "areaId": "550e8400-e29b-41d4-a716-446655440001",
-    "areaName": "Amsterdam",
-    "lat": 52.3676,
-    "lng": 4.9041,
-    "sortOrder": 1
-  }
-}
-```
-
----
-
-### 2.9 Add Supplementary Content (`POST /api/v1/products/:id/supplementaries`)
-Adds modular content blocks (e.g. Inclusions, Exclusions, Important Info, Notes) to this product.
-
-#### Request DTO (`CreateSupplementaryDto`)
+### 4.1 Create Variant (`POST /api/v1/products/:id/variants`)
 ```typescript
 import { IsString, IsIn, IsInt, Min, IsOptional } from 'class-validator';
 
-export class CreateSupplementaryDto {
-  @IsString()
-  @IsIn(['INCLUDED', 'EXCLUDED', 'IMPORTANT_INFO', 'NOTE'])
-  category: 'INCLUDED' | 'EXCLUDED' | 'IMPORTANT_INFO' | 'NOTE';
-
-  @IsString()
-  content: string;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  sortOrder?: number = 0;
-}
-```
-
-#### Success Response (201 Created)
-```json
-{
-  "statusCode": 201,
-  "message": "Supplementary content added successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440091",
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "category": "INCLUDED",
-    "content": "Tiket pesawat internasional PP kelas ekonomi",
-    "sortOrder": 0
-  }
-}
-```
-
----
-
-## 3. L2 Variant & L3 Trip Endpoints
-
-### 3.1 Create Variant (`POST /api/v1/products/:id/variants`)
-```typescript
 export class CreateVariantDto {
   @IsString()
   code: string; // e.g. "GWE-SPR-2026"
@@ -729,66 +318,6 @@ export class CreateVariantDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  durationDays?: number; // Optional duration override
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  durationNights?: number;
-}
-```
-
----
-
-### 3.2 Get Variant by ID (`GET /api/v1/variants/:id`)
-Fetches specific variant entity details by UUID.
-
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Variant retrieved successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440020",
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "code": "GWE-SPR-2026",
-    "name": "GWE Spring 2026",
-    "slug": "gwe-spring-2026",
-    "variantType": "SEASONAL",
-    "durationDays": 11,
-    "durationNights": 9,
-    "listingStatus": "ACTIVE",
-    "createdAt": "2026-09-04T10:00:00.000Z"
-  }
-}
-```
-
----
-
-### 3.3 Update Variant (`PUT /api/v1/variants/:id`)
-Updates mutable variant properties (name, duration overrides, listing status).
-
-#### Request DTO (`UpdateVariantDto`)
-```typescript
-import { IsString, IsIn, IsInt, Min, IsOptional } from 'class-validator';
-
-export class UpdateVariantDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  slug?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL'])
-  variantType?: 'STANDARD' | 'SEASONAL' | 'THEMED' | 'PROMOTIONAL';
-
-  @IsOptional()
-  @IsInt()
-  @Min(1)
   durationDays?: number;
 
   @IsOptional()
@@ -798,95 +327,167 @@ export class UpdateVariantDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'])
-  listingStatus?: string;
+  itineraryPdfUrl?: string; // Optional variant-specific ATW brochure URL override
 }
 ```
+
+---
+
+### 4.2 Get Variant Master Itinerary (`GET /api/v1/variants/:variantId/itinerary`)
+Returns the default master day-by-day itinerary defined for this variant.
 
 #### Success Response (200 OK)
 ```json
 {
   "statusCode": 200,
-  "message": "Variant updated successfully",
+  "message": "Variant default itinerary retrieved successfully",
   "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440020",
-    "name": "GWE Spring 2026 (Updated)",
-    "slug": "gwe-spring-2026",
-    "variantType": "SEASONAL",
-    "durationDays": 11,
-    "durationNights": 9,
-    "listingStatus": "ACTIVE",
-    "updatedAt": "2026-09-04T12:00:00.000Z"
+    "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
+    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "tripId": null,
+    "title": "GWE Spring Master Itinerary 11D",
+    "daysCount": 11,
+    "items": [
+      {
+        "itemId": "550e8400-e29b-41d4-a716-446655440071",
+        "dayNumber": 1,
+        "sequenceNumber": 1,
+        "itemType": "TRANSPORT",
+        "title": "Jakarta - Amsterdam",
+        "description": "Boarding direct flight to Amsterdam.",
+        "meals": { "breakfast": false, "lunch": false, "dinner": true },
+        "accommodation": "In-flight",
+        "locationName": "Amsterdam"
+      },
+      {
+        "itemId": "550e8400-e29b-41d4-a716-446655440072",
+        "dayNumber": 2,
+        "sequenceNumber": 1,
+        "itemType": "ACTIVITY",
+        "title": "Amsterdam - Keukenhof",
+        "description": "Visit Keukenhof tulip gardens and Zaanse Schans.",
+        "meals": { "breakfast": true, "lunch": true, "dinner": true },
+        "accommodation": "Van der Valk Hotel Amsterdam",
+        "locationName": "Keukenhof"
+      },
+      {
+        "itemId": "550e8400-e29b-41d4-a716-446655440073",
+        "dayNumber": 3,
+        "sequenceNumber": 1,
+        "itemType": "OTHER",
+        "title": "Free Leisure & Personal Exploration",
+        "description": "Acclimatization, shopping, or personal exploration around Amsterdam city center.",
+        "meals": { "breakfast": true, "lunch": false, "dinner": false },
+        "accommodation": "Van der Valk Hotel Amsterdam",
+        "locationName": "Amsterdam"
+      }
+    ]
   }
 }
 ```
 
 ---
 
-### 3.4 List Trips (`GET /api/v1/variants/:variantId/trips`)
-Returns a paginated list of dated departure windows under a specific variant.
+### 4.3 Upsert Variant Master Itinerary (`PUT /api/v1/variants/:variantId/itinerary`)
 
-#### Query Parameters
-- `status` (optional): Filter by trip status (`ACTIVE`, `FULL`, `CANCELLED`, `COMPLETED`)
-- `page` (optional, default `1`): Page number
-- `limit` (optional, default `10`): Items per page
+#### Request DTO (`UpsertItineraryDto`)
+```typescript
+import { IsString, IsArray, ValidateNested, IsInt, Min, IsOptional, IsBoolean, IsIn, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class ItineraryDayMealDto {
+  @IsBoolean() breakfast: boolean;
+  @IsBoolean() lunch: boolean;
+  @IsBoolean() dinner: boolean;
+}
+
+export class ItineraryItemDto {
+  @IsInt()
+  @Min(1)
+  dayNumber: number;
+
+  @IsInt()
+  @Min(1)
+  sequenceNumber: number;
+
+  @IsIn(['ACTIVITY', 'TRANSPORT', 'MEAL', 'ACCOMMODATION', 'OTHER'])
+  itemType: 'ACTIVITY' | 'TRANSPORT' | 'MEAL' | 'ACCOMMODATION' | 'OTHER';
+
+  @IsString()
+  title: string;
+
+  @IsString()
+  description: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ItineraryDayMealDto)
+  meals?: ItineraryDayMealDto;
+
+  @IsOptional()
+  @IsString()
+  accommodation?: string;
+
+  @IsOptional()
+  @IsString()
+  locationName?: string;
+
+  @IsOptional()
+  @IsUUID()
+  poiAreaId?: string;
+}
+
+export class UpsertItineraryDto {
+  @IsString()
+  title: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ItineraryItemDto)
+  items: ItineraryItemDto[];
+}
+```
+
+---
+
+## 5. L2 Variant Add-on Subsystem
+
+### 5.1 List Variant Add-ons (`GET /api/v1/variants/:variantId/addons`)
+Returns all optional or required add-ons available for selection on this variant.
 
 #### Success Response (200 OK)
 ```json
 {
   "statusCode": 200,
-  "message": "Trips retrieved successfully",
-  "meta": {
-    "totalItems": 4,
-    "itemCount": 2,
-    "itemsPerPage": 10,
-    "totalPages": 1,
-    "currentPage": 1
-  },
+  "message": "Variant add-ons retrieved successfully",
   "data": [
     {
-      "id": "550e8400-e29b-41d4-a716-446655440031",
+      "id": "550e8400-e29b-41d4-a716-446655440070",
       "variantId": "550e8400-e29b-41d4-a716-446655440020",
-      "startDate": "2026-04-10",
-      "endDate": "2026-04-20",
-      "minQuota": 5,
-      "maxQuota": 25,
-      "status": "ACTIVE",
-      "pricings": [
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440041",
-          "nationalityScope": "DOMESTIC",
-          "basePrice": 32000000.00,
-          "sellingPrice": 28000000.00
-        },
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440042",
-          "nationalityScope": "INTERNATIONAL",
-          "basePrice": 38000000.00,
-          "sellingPrice": 34000000.00
-        }
-      ],
-      "createdAt": "2026-09-04T10:00:00.000Z",
-      "updatedAt": "2026-09-04T10:00:00.000Z"
+      "code": "ADDON-VISA-FAST",
+      "name": "Schengen Visa Fast Track",
+      "description": "Priority appointment and consular processing assistance",
+      "addonType": "VISA_EXPRESS",
+      "chargeType": "PER_PAX",
+      "price": 2500000.00,
+      "currency": "IDR",
+      "applicableAgeBand": null,
+      "isMandatory": false,
+      "maxQuantity": 1
     },
     {
-      "id": "550e8400-e29b-41d4-a716-446655440032",
+      "id": "550e8400-e29b-41d4-a716-446655440071",
       "variantId": "550e8400-e29b-41d4-a716-446655440020",
-      "startDate": "2026-04-24",
-      "endDate": "2026-05-04",
-      "minQuota": 5,
-      "maxQuota": 25,
-      "status": "ACTIVE",
-      "pricings": [
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440043",
-          "nationalityScope": "ALL",
-          "basePrice": 32000000.00,
-          "sellingPrice": 28000000.00
-        }
-      ],
-      "createdAt": "2026-09-04T10:30:00.000Z",
-      "updatedAt": "2026-09-04T10:30:00.000Z"
+      "code": "ADDON-EIFFEL-SUMMIT",
+      "name": "Eiffel Tower Summit Access",
+      "description": "Skip-the-line elevator ticket to top observation deck",
+      "addonType": "EXPERIENTIAL_TOUR",
+      "chargeType": "PER_PAX",
+      "price": 750000.00,
+      "currency": "IDR",
+      "applicableAgeBand": "ADULT",
+      "isMandatory": false,
+      "maxQuantity": 4
     }
   ]
 }
@@ -894,51 +495,118 @@ Returns a paginated list of dated departure windows under a specific variant.
 
 ---
 
-### 3.5 Create Trip Window (`POST /api/v1/variants/:variantId/trips`)
+### 5.2 Create Variant Add-on (`POST /api/v1/variants/:variantId/addons`)
+
+#### Request DTO (`CreateAddonDto`)
 ```typescript
-export class CreateTripDto {
-  @IsDateString()
-  startDate: string; // "YYYY-MM-DD", e.g. "2026-04-10"
+import { IsString, IsNumber, IsPositive, IsIn, IsBoolean, IsOptional, IsInt, Min } from 'class-validator';
 
-  @IsDateString()
-  endDate: string;   // "YYYY-MM-DD", e.g. "2026-04-20"
+export class CreateAddonDto {
+  @IsString()
+  code: string;
 
-  @IsInt()
-  @Min(1)
-  minQuota: number = 1;
-
-  @IsInt()
-  @Min(1)
-  maxQuota: number;  // e.g. 25
+  @IsString()
+  name: string;
 
   @IsOptional()
   @IsString()
-  @IsIn(['ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'])
-  status?: string = 'ACTIVE';
+  description?: string;
+
+  @IsString()
+  @IsIn(['SINGLE_ROOM', 'BAGGAGE', 'FLIGHT_UPGRADE', 'EXPERIENTIAL_TOUR', 'INSURANCE', 'VISA_EXPRESS', 'SPECIAL_MEAL'])
+  addonType: string;
+
+  @IsString()
+  @IsIn(['PER_PAX', 'PER_ROOM', 'PER_BOOKING'])
+  chargeType: 'PER_PAX' | 'PER_ROOM' | 'PER_BOOKING';
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  price: number;
+
+  @IsOptional()
+  @IsString()
+  currency?: string = 'IDR';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['ADULT', 'INFANT'])
+  applicableAgeBand?: 'ADULT' | 'INFANT'; // Optional age-band restriction; null/omitted = applies to ALL
+
+  @IsOptional()
+  @IsBoolean()
+  isMandatory?: boolean = false;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxQuantity?: number = 1;
 }
 ```
 
-#### Success Response (201 Created)
+---
+
+## 6. L3 Trip Itinerary & Effective Resolution
+
+### 6.1 Get Effective Itinerary (`GET /api/v1/trips/:tripId/effective-itinerary`)
+Resolves itinerary following the priority rule: returns **Trip-specific override** if present; otherwise falls back to **Variant default master itinerary**.
+
+#### Success Response (200 OK - Fallback to Variant Default)
 ```json
 {
-  "statusCode": 201,
-  "message": "Trip departure created successfully",
+  "statusCode": 200,
+  "message": "Effective itinerary resolved",
   "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440031",
+    "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
+    "tripId": "550e8400-e29b-41d4-a716-446655440031",
     "variantId": "550e8400-e29b-41d4-a716-446655440020",
-    "startDate": "2026-04-10",
-    "endDate": "2026-04-20",
-    "minQuota": 1,
-    "maxQuota": 25,
-    "status": "ACTIVE"
+    "isOverride": false,
+    "title": "GWE Spring Master Itinerary 11D",
+    "daysCount": 11,
+    "items": [
+      {
+        "dayNumber": 1,
+        "sequenceNumber": 1,
+        "itemType": "TRANSPORT",
+        "title": "Jakarta - Amsterdam",
+        "description": "Boarding direct flight to Amsterdam."
+      }
+    ]
+  }
+}
+```
+
+#### Success Response (200 OK - Trip Override Active)
+```json
+{
+  "statusCode": 200,
+  "message": "Effective itinerary resolved",
+  "data": {
+    "itineraryId": "550e8400-e29b-41d4-a716-446655440079",
+    "tripId": "550e8400-e29b-41d4-a716-446655440031",
+    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "isOverride": true,
+    "title": "GWE Spring 11D - Keukenhof Peak Special (Trip Override)",
+    "daysCount": 11,
+    "items": [
+      {
+        "dayNumber": 1,
+        "sequenceNumber": 1,
+        "itemType": "TRANSPORT",
+        "title": "Jakarta - Doha - Amsterdam",
+        "description": "Flight via Doha with private lounge layover."
+      }
+    ]
   }
 }
 ```
 
 ---
 
-### 3.6 List Trip Pricings (`GET /api/v1/trips/:tripId/pricings`)
-Returns all active price tiers associated with a specific departure window.
+## 7. L3 Trip Pricing & Age Bands
+
+### 7.1 List Trip Pricings (`GET /api/v1/trips/:tripId/pricings`)
+Returns pricing tiers for each traveler age band (`ADULT`, `INFANT`) along with whether each consumes seat quota (`consumesQuota`).
 
 #### Success Response (200 OK)
 ```json
@@ -949,22 +617,77 @@ Returns all active price tiers associated with a specific departure window.
     {
       "id": "550e8400-e29b-41d4-a716-446655440041",
       "tripId": "550e8400-e29b-41d4-a716-446655440031",
-      "nationalityScope": "DOMESTIC",
+      "ageBand": "ADULT",
+      "ageMin": 12,
+      "ageMax": null,
+      "consumesQuota": true,
       "basePrice": 32000000.00,
       "sellingPrice": 28000000.00,
       "currency": "IDR",
-      "effectiveFrom": "2026-01-01T00:00:00.000Z",
-      "effectiveTo": null
+      "components": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440051",
+          "name": "International Flight & Taxes",
+          "amount": 14000000.00,
+          "isIncluded": true,
+          "description": "Economy return flight with Qatar Airways"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440052",
+          "name": "4-Star Hotel Accommodation (Twin)",
+          "amount": 8000000.00,
+          "isIncluded": true,
+          "description": "9 nights twin-sharing in 4-star hotels"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440053",
+          "name": "Private Coach & Transfers",
+          "amount": 3500000.00,
+          "isIncluded": true,
+          "description": "Air-conditioned private touring motorcoach"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440054",
+          "name": "Tour Leader & Local Guides",
+          "amount": 1500000.00,
+          "isIncluded": true,
+          "description": "Professional Indonesian tour leader"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440055",
+          "name": "Keukenhof & Attraction Admissions",
+          "amount": 1000000.00,
+          "isIncluded": true,
+          "description": "Fast-track entrance tickets"
+        }
+      ]
     },
     {
-      "id": "550e8400-e29b-41d4-a716-446655440042",
+      "id": "550e8400-e29b-41d4-a716-446655440044",
       "tripId": "550e8400-e29b-41d4-a716-446655440031",
-      "nationalityScope": "INTERNATIONAL",
-      "basePrice": 38000000.00,
-      "sellingPrice": 34000000.00,
+      "ageBand": "INFANT",
+      "ageMin": 0,
+      "ageMax": 2,
+      "consumesQuota": false,
+      "basePrice": 10000000.00,
+      "sellingPrice": 8500000.00,
       "currency": "IDR",
-      "effectiveFrom": "2026-01-01T00:00:00.000Z",
-      "effectiveTo": null
+      "components": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440058",
+          "name": "Infant Airline Ticket & Tax",
+          "amount": 7500000.00,
+          "isIncluded": true,
+          "description": "Lap infant international ticket"
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440059",
+          "name": "Infant Travel Insurance & Admin",
+          "amount": 1000000.00,
+          "isIncluded": true,
+          "description": "Comprehensive infant travel insurance"
+        }
+      ]
     }
   ]
 }
@@ -972,17 +695,65 @@ Returns all active price tiers associated with a specific departure window.
 
 ---
 
-### 3.7 Upsert Trip Pricing (`PUT /api/v1/trips/:tripId/pricings`)
-Creates or updates pricing for a specific nationality scope on a trip.
+### 7.2 Upsert Trip Pricing with Breakdown Components (`PUT /api/v1/trips/:tripId/pricings`)
 
-#### Request DTO (`UpsertPricingDto`)
+#### Request DTO (`UpsertTripPricingDto`)
 ```typescript
-import { IsNumber, IsPositive, IsIn, IsString, IsOptional, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsIn,
+  IsNumber,
+  IsPositive,
+  IsBoolean,
+  IsOptional,
+  IsInt,
+  Min,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
-export class UpsertPricingDto {
+export class CreatePricingComponentDto {
   @IsString()
-  @IsIn(['ALL', 'DOMESTIC', 'INTERNATIONAL'])
-  nationalityScope: 'ALL' | 'DOMESTIC' | 'INTERNATIONAL';
+  name: string; // e.g. "International Flight & Taxes", "4-Star Hotel Accommodation"
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isIncluded?: boolean = true;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number = 0;
+}
+
+export class UpsertTripPricingDto {
+  @IsString()
+  @IsIn(['ADULT', 'INFANT'])
+  ageBand: 'ADULT' | 'INFANT';
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  ageMin?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  ageMax?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  consumesQuota?: boolean = true; // Configurable: true if seat allocated, false if lap infant
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
@@ -997,12 +768,10 @@ export class UpsertPricingDto {
   currency?: string = 'IDR';
 
   @IsOptional()
-  @IsDateString()
-  effectiveFrom?: string;
-
-  @IsOptional()
-  @IsDateString()
-  effectiveTo?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePricingComponentDto)
+  components?: CreatePricingComponentDto[];
 }
 ```
 
@@ -1014,11 +783,165 @@ export class UpsertPricingDto {
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440041",
     "tripId": "550e8400-e29b-41d4-a716-446655440031",
-    "nationalityScope": "DOMESTIC",
+    "ageBand": "ADULT",
+    "consumesQuota": true,
     "basePrice": 32000000.00,
     "sellingPrice": 28000000.00,
-    "currency": "IDR"
+    "components": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440051",
+        "name": "International Flight & Taxes",
+        "amount": 14000000.00,
+        "isIncluded": true,
+        "description": "Economy return flight with Qatar Airways"
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440052",
+        "name": "4-Star Hotel Accommodation (Twin)",
+        "amount": 8000000.00,
+        "isIncluded": true,
+        "description": "9 nights twin-sharing in 4-star hotels"
+      }
+    ]
   }
 }
 ```
 
+---
+
+## 8. Promotional Badges Endpoints
+
+### 8.1 List All Badges (`GET /api/v1/badges`)
+Returns all active promotional badges configured for the platform.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Badges retrieved successfully",
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440090",
+      "code": "BEST_SELLER",
+      "label": "🔥 Best Seller",
+      "backgroundColor": "#FEF2F2",
+      "textColor": "#991B1B",
+      "iconUrl": null,
+      "isActive": true
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440091",
+      "code": "SPRING_EDITION",
+      "label": "🌸 Spring Edition",
+      "backgroundColor": "#FDF2F8",
+      "textColor": "#9D174D",
+      "iconUrl": null,
+      "isActive": true
+    }
+  ]
+}
+```
+
+### 8.2 Create Badge (`POST /api/v1/badges`)
+
+#### Request DTO (`CreateBadgeDto`)
+```typescript
+import { IsString, IsNotEmpty, IsOptional, IsBoolean } from 'class-validator';
+
+export class CreateBadgeDto {
+  @IsString()
+  @IsNotEmpty()
+  code: string; // e.g. 'BEST_SELLER', 'SPRING_EDITION'
+
+  @IsString()
+  @IsNotEmpty()
+  label: string; // e.g. '🔥 Best Seller', '🌸 Spring Edition'
+
+  @IsOptional()
+  @IsString()
+  backgroundColor?: string = '#F3F4F6';
+
+  @IsOptional()
+  @IsString()
+  textColor?: string = '#1F2937';
+
+  @IsOptional()
+  @IsString()
+  iconUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
+}
+```
+
+#### Success Response (201 Created)
+```json
+{
+  "statusCode": 201,
+  "message": "Badge created successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440092",
+    "code": "EARLY_BIRD",
+    "label": "⚡ Early Bird",
+    "backgroundColor": "#FEFCE8",
+    "textColor": "#854D0E",
+    "iconUrl": null,
+    "isActive": true
+  }
+}
+```
+
+### 8.3 Assign Badges to Variant (`POST /api/v1/variants/:id/badges`)
+
+#### Request DTO (`AssignVariantBadgesDto`)
+```typescript
+import { IsArray, IsUUID } from 'class-validator';
+
+export class AssignVariantBadgesDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  badgeIds: string[];
+}
+```
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Badges assigned to variant successfully",
+  "data": {
+    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "badges": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440090",
+        "code": "BEST_SELLER",
+        "label": "🔥 Best Seller",
+        "backgroundColor": "#FEF2F2",
+        "textColor": "#991B1B"
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440091",
+        "code": "SPRING_EDITION",
+        "label": "🌸 Spring Edition",
+        "backgroundColor": "#FDF2F8",
+        "textColor": "#9D174D"
+      }
+    ]
+  }
+}
+```
+
+### 8.4 Detach Badge from Variant (`DELETE /api/v1/variants/:id/badges/:badgeId`)
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Badge detached from variant successfully",
+  "data": {
+    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "detachedBadgeId": "550e8400-e29b-41d4-a716-446655440090"
+  }
+}
+```

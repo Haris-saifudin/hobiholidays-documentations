@@ -1,17 +1,17 @@
 # All Tours Catalog & Variant Cards — Next.js Frontend Implementation Guide
 
 > **Pillar 4: Next.js Frontend Implementation**
-> Frontend implementation guide for the **All Tours** catalog page (`app/tours/page.tsx`) and the primary bookable unit: the **Variant Card Component** (`VariantCard`). Covers variant type visual badging (`STANDARD`, `SEASONAL`, `THEMED`, `PROMOTIONAL`), duration rendering, starting price formatting, and nationality scope switching.
+> Frontend implementation guide for the **All Tours** catalog page (`app/tours/page.tsx`) and the primary bookable unit: the **Variant Card Component** (`VariantCard`). Covers 2-tier Category badging, variant type visual badges (`STANDARD`, `SEASONAL`, `THEMED`, `PROMOTIONAL`), duration rendering, and Adult starting price formatting.
 >
-> **Related Design Document:** [Product Hierarchy Technical Design](../technical/product-hierarchy-technical-design.md)
-> **API Contract:** [Product Hierarchy Contracts](../contracts/product-hierarchy-contract.md)
+> **Related Design Document:** [Product Hierarchy Technical Design](../technical/product-hierarchy-technical-design.md)  
+> **API Contract:** [Product Hierarchy Contracts](../contracts/product-hierarchy-contract.md)  
 > **Backend Guide:** [Product Hierarchy Backend Guide](../backend/product-hierarchy-backend-guide.md)
 
 ---
 
-## 🎨 Variant Type Visual Badging System
+## 🎨 Variant Type & Category Visual Badging System
 
-The catalog surfaces distinct badging tokens based on `variant.variantType`:
+The catalog surfaces distinct badging tokens based on `variant.variantType` and category taxonomy:
 
 | Variant Type | Visual Role | Badge Colors (CSS / Tailwind) | Micro-Icon |
 | :--- | :--- | :--- | :--- |
@@ -29,13 +29,32 @@ The catalog surfaces distinct badging tokens based on `variant.variantType`:
 import Image from 'next/image';
 import Link from 'next/link';
 
+export interface CategorySummary {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface VariantBadge {
+  id: string;
+  code: string;
+  label: string;
+  backgroundColor: string;
+  textColor: string;
+  iconUrl?: string | null;
+}
+
 export interface VariantCardProps {
   variant: {
-    id: string;
+    id?: string;
+    variantId?: string;
     code: string;
     name: string;
     slug: string;
     variantType: 'STANDARD' | 'SEASONAL' | 'THEMED' | 'PROMOTIONAL';
+    badges?: VariantBadge[];
+    category?: CategorySummary;
+    parentCategory?: CategorySummary;
     durationDays: number;
     durationNights: number;
     startingPrice: number;
@@ -82,11 +101,25 @@ export function VariantCard({ variant }: VariantCardProps) {
           priority={false}
         />
 
-        {/* Variant Type Badge */}
-        <div className="absolute top-3 left-3">
+        {/* Top Badges: Promotional Badges + Variant Type + Category */}
+        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+          {variant.badges && variant.badges.map((badge) => (
+            <span
+              key={badge.id}
+              style={{ backgroundColor: badge.backgroundColor, color: badge.textColor }}
+              className="px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm backdrop-blur-md border border-black/5"
+            >
+              {badge.label}
+            </span>
+          ))}
           <span className={`px-2.5 py-1 rounded-full text-xs border font-medium shadow-sm backdrop-blur-md ${getBadgeStyle(variant.variantType)}`}>
             {variant.variantType}
           </span>
+          {variant.category && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-white/90 text-slate-700 shadow-sm backdrop-blur-md">
+              {variant.category.name}
+            </span>
+          )}
         </div>
 
         {/* Duration Badge */}
@@ -98,9 +131,16 @@ export function VariantCard({ variant }: VariantCardProps) {
       {/* 2. Card Body */}
       <div className="p-5 flex-1 flex flex-col justify-between">
         <div>
-          <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
-            {variant.product.name}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
+              {variant.product.name}
+            </span>
+            {variant.parentCategory && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                {variant.parentCategory.name}
+              </span>
+            )}
+          </div>
           <h3 className="text-lg font-bold text-gray-900 mt-1 line-clamp-2 group-hover:text-blue-600 transition-colors">
             {variant.name}
           </h3>
@@ -109,7 +149,7 @@ export function VariantCard({ variant }: VariantCardProps) {
         {/* 3. Pricing & Call to Action */}
         <div className="pt-4 mt-4 border-t border-gray-50 flex items-end justify-between">
           <div>
-            <p className="text-xs text-gray-500">Mulai dari</p>
+            <p className="text-xs text-gray-500">Mulai dari (Dewasa)</p>
             <p className="text-lg font-extrabold text-blue-600">
               {variant.startingPrice > 0 ? formattedPrice : 'Hubungi Kami'}
             </p>
