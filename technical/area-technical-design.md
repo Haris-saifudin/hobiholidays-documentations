@@ -1,7 +1,7 @@
 # Area Domain - Technical Data Model & Architecture
 
 > **Overview**
-> Technical documentation for the Area/Geography Domain data model. This architecture is centered around managing hierarchical geographical regions, destinations, and administrative boundaries (Continents, Countries, and Cities — with maximum depth strictly capped at City level) to support multi-level location mapping across trips, products, and hotels.
+> Technical documentation for the Area/Geography Domain data model. This architecture is centered around managing hierarchical geographical regions, destinations, and administrative boundaries (Continents, Sub Continents, Countries, and POIs / Points of Interest) to support multi-level location mapping across tours, variants, trips, and itinerary stops.
 >
 > _Engineered for High Scalability, Hierarchical Tree Traversal, and optimized for a NestJS + PostgreSQL stack._
 
@@ -19,9 +19,9 @@
 
 The following architectural guidelines must be strictly adhered to during implementation to ensure enterprise-grade reliability, optimal client consumption, and seamless deployment.
 
-### 1. Hierarchical Closure Pattern & Adjacency List (Continent → Country → City)
+### 1. Hierarchical Closure Pattern & Adjacency List (Continent → Sub Continent → Country → POI)
 
-The geography tree is strictly capped at a 3-tier hierarchy: **Continent → Country → City** (maximum granularity ends at City level; no districts or sub-districts). To handle multi-level geographical relationships efficiently without recursive CTE performance hits on deep reads, the architecture combines an **Adjacency List (`parent_id`)** for simple CRUD operations with composite indexing for rapid subtree lookups.
+The geography tree follows a strict 4-tier hierarchy: **Continent → Sub Continent → Country → POI (Point of Interest)**. To handle multi-level geographical relationships efficiently without recursive CTE performance hits on deep reads, the architecture combines an **Adjacency List (`parent_id`)** for simple CRUD operations with composite indexing for rapid subtree lookups. POIs represent individual landmarks, attractions, or specific visiting spots (e.g., *Keukenhof Gardens*, *Eiffel Tower*, *Mount Fuji*).
 
 ### 2. DevOps & Automated Migrations
 
@@ -60,25 +60,26 @@ CREATE EXTENSION IF NOT EXISTS "postgis"; -- Required for advanced spatial queri
 -- =========================================================================
 CREATE TABLE area_types (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE, -- 'CONTINENT' | 'COUNTRY' | 'CITY' (max granularity is CITY)
+    name VARCHAR(50) NOT NULL UNIQUE, -- 'CONTINENT' | 'SUB_CONTINENT' | 'COUNTRY' | 'POI'
     description TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT chk_area_types_name CHECK (name IN ('CONTINENT', 'COUNTRY', 'CITY'))
+    CONSTRAINT chk_area_types_name CHECK (name IN ('CONTINENT', 'SUB_CONTINENT', 'COUNTRY', 'POI'))
 );
 
 CREATE TABLE areas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    parent_id UUID REFERENCES areas(id) ON DELETE CASCADE, -- Adjacency list for hierarchy
+    parent_id UUID REFERENCES areas(id) ON DELETE CASCADE, -- Adjacency list for 4-tier hierarchy
     area_type_id INT NOT NULL REFERENCES area_types(id) ON DELETE RESTRICT,
-    code VARCHAR(50) UNIQUE NOT NULL, -- e.g., 'ID-JK', 'JAPAN-TYO'
+    code VARCHAR(50) UNIQUE NOT NULL, -- e.g., 'EUR', 'WEUR', 'NL', 'NL-KEUKENHOF'
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) UNIQUE NOT NULL,
-    iso_code VARCHAR(10), -- ISO 3166-1 alpha-2 for countries, etc.
+    iso_code VARCHAR(10), -- ISO 3166-1 alpha-2 for countries (e.g. NL, FR, JP)
     lat DOUBLE PRECISION,
     lng DOUBLE PRECISION,
-    boundary GEOMETRY(Polygon, 4326), -- PostGIS polygon for geographic boundaries
+    coordinates GEOMETRY(Point, 4326), -- PostGIS point for POI exact location
+    boundary GEOMETRY(Polygon, 4326),  -- PostGIS polygon for countries / sub-continents
     listing_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE | INACTIVE | ARCHIVED
     sort_order INT DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -92,6 +93,7 @@ CREATE TABLE areas (
 CREATE INDEX idx_areas_parent_id ON areas(parent_id);
 CREATE INDEX idx_areas_type ON areas(area_type_id);
 CREATE INDEX idx_areas_boundary_gist ON areas USING GIST (boundary);
+CREATE INDEX idx_areas_coordinates_gist ON areas USING GIST (coordinates);
 CREATE INDEX idx_areas_slug ON areas(slug);
 
 -- =========================================================================
@@ -113,8 +115,8 @@ CREATE TRIGGER trg_areas_updated_at      BEFORE UPDATE ON areas      FOR EACH RO
 
 ## 📊 Domain Data Scenario
 
-**Area Hierarchy:** Asia (Continent) -> Japan (Country) -> Tokyo (City)
-**Root Area ID:** `area_asia_01`
+**Area Hierarchy:** Europe (Continent) -> Western Europe (Sub Continent) -> Netherlands (Country) -> Keukenhof Gardens (POI)  
+**Root Area ID:** `area_eur_01`
 
 _(Sample data is included below each respective ERD block to illustrate context)._
 
@@ -123,13 +125,13 @@ _(Sample data is included below each respective ERD block to illustrate context)
 ```mermaid
 erDiagram
     area_types ||--o{ areas : "area_type_id"
-    areas ||--o{ areas : "parent_id (Continent -> Country -> City)"
-    areas ||--o{ product_locations : "area_id (City destination marker)"
+    areas ||--o{ areas : "parent_id (Continent -> Sub Continent -> Country -> POI)"
+    areas ||--o{ product_locations : "area_id (POI destination marker)"
     products ||--o{ product_locations : "product_id"
 
     area_types {
         int       id           PK
-        varchar   name         "CONTINENT | COUNTRY | CITY"
+        varchar   name         "CONTINENT | SUB_CONTINENT | COUNTRY | POI"
         text      description
         timestamp created_at
         timestamp updated_at
@@ -137,14 +139,15 @@ erDiagram
 
     areas {
         uuid      id             PK
-        uuid      parent_id      FK "self-reference (Continent -> Country -> City)"
+        uuid      parent_id      FK "self-reference (4-tier hierarchy)"
         int       area_type_id   FK "references area_types.id"
-        varchar   code           "e.g. ASIA, JP, JP-TYO"
-        varchar   name           "e.g. Asia, Japan, Tokyo"
-        varchar   slug           "e.g. asia, japan, tokyo"
-        varchar   iso_code       "ISO 3166-1 alpha-2 (JP)"
+        varchar   code           "e.g. EUR, WEUR, NL, NL-KEUKENHOF"
+        varchar   name           "e.g. Europe, Western Europe, Netherlands, Keukenhof Gardens"
+        varchar   slug           "e.g. europe, western-europe, netherlands, keukenhof-gardens"
+        varchar   iso_code       "ISO 3166-1 alpha-2 (NL, FR, JP)"
         double    lat
         double    lng
+        geometry  coordinates    "PostGIS Point (4326)"
         geometry  boundary       "PostGIS Polygon (4326)"
         varchar   listing_status "ACTIVE | INACTIVE | ARCHIVED"
         int       sort_order
@@ -157,8 +160,8 @@ erDiagram
         uuid      id          PK
         uuid      product_id  FK
         varchar   source_type "AREA | MANUAL"
-        uuid      area_id     FK "logical FK → areas.id (City level)"
-        varchar   area_name   "denormalized city name"
+        uuid      area_id     FK "logical FK → areas.id (POI or Country level)"
+        varchar   area_name   "denormalized destination / POI name"
         double    lat
         double    lng
         text      address
@@ -169,7 +172,7 @@ erDiagram
 
     products {
         uuid      id             PK
-        varchar   code           "e.g. TURKEY-WONDERS, GWE"
+        varchar   code           "e.g. GWE-MASTER, SWISS-ALPS"
         varchar   slug           "e.g. grand-west-europe"
         varchar   product_type   "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   listing_status "DRAFT | PENDING_REVIEW | ACTIVE | INACTIVE | ARCHIVED | SUSPENDED"
@@ -185,70 +188,81 @@ erDiagram
 | id | name | description |
 | :--- | :--- | :--- |
 | 1 | CONTINENT | Global continental landmasses and geographic macro-regions (root level) |
-| 2 | COUNTRY | Sovereign states and independent nations |
-| 3 | CITY | Major metropolitan areas, municipalities, and primary tour destinations (maximum granularity) |
+| 2 | SUB_CONTINENT | Sub-continental regions and geopolitical sub-divisions |
+| 3 | COUNTRY | Sovereign states and independent nations |
+| 4 | POI | Point of Interest, landmark, attraction, or specific activity spot |
 
 **`areas`**
 
-| id | parent_id | area_type_id | code | name | slug | iso_code | lat | lng | boundary | listing_status | sort_order |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| area_asia_01 | NULL | 1 | ASIA | Asia | asia | NULL | 34.0479 | 100.6197 | NULL | ACTIVE | 1 |
-| area_jp_01 | area_asia_01 | 2 | JP | Japan | japan | JP | 36.2048 | 138.2529 | NULL | ACTIVE | 2 |
-| area_tyo_01 | area_jp_01 | 3 | JP-TYO | Tokyo | tokyo | NULL | 35.6762 | 139.6503 | NULL | ACTIVE | 3 |
+| id | parent_id | area_type_id | code | name | slug | iso_code | lat | lng | listing_status | sort_order |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| area_eur_01 | NULL | 1 | EUR | Europe | europe | NULL | 54.5260 | 15.2551 | ACTIVE | 1 |
+| area_weur_01 | area_eur_01 | 2 | WEUR | Western Europe | western-europe | NULL | 48.8566 | 2.3522 | ACTIVE | 2 |
+| area_nl_01 | area_weur_01 | 3 | NL | Netherlands | netherlands | NL | 52.1326 | 5.2913 | ACTIVE | 3 |
+| area_keukenhof_01 | area_nl_01 | 4 | NL-KEUKENHOF | Keukenhof Gardens | keukenhof-gardens | NULL | 52.2699 | 4.5463 | ACTIVE | 4 |
 
 **`product_locations` (Cross-Domain Mapping Sample)**
 
 | id | product_id | source_type | area_id | area_name | lat | lng | address | sort_order |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| loc_jp_01 | prod_japan_01 | AREA | area_tyo_01 | Tokyo | 35.6762 | 139.6503 | Shinjuku & Shibuya, Tokyo, Japan | 1 |
+| loc_nl_01 | prod_gwe_01 | AREA | area_keukenhof_01 | Keukenhof Gardens | 52.2699 | 4.5463 | Stationsweg 166A, 2161 AM Lisse, Netherlands | 1 |
 
 ---
 
-### 2. 3-Tier Area Hierarchy ERD (Conceptual Level View)
+### 2. 4-Tier Area Hierarchy ERD (Conceptual Level View)
 
-This conceptual ERD illustrates how the 3 geographical tiers relate hierarchically via `parent_id` and terminate at the `City` level where tour products anchor their destination stops:
+This conceptual ERD illustrates how the 4 geographical tiers relate hierarchically via `parent_id` and terminate at the `POI` level where tour products and itinerary stops anchor their visits:
 
 ```mermaid
 erDiagram
-    CONTINENT ||--o{ COUNTRY : "parent_id (1:N)"
-    COUNTRY   ||--o{ CITY    : "parent_id (1:N)"
-    CITY      ||--o{ product_locations : "area_id (1:N City destination)"
-    products  ||--o{ product_locations : "product_id (1:N)"
+    CONTINENT     ||--o{ SUB_CONTINENT : "parent_id (1:N)"
+    SUB_CONTINENT ||--o{ COUNTRY       : "parent_id (1:N)"
+    COUNTRY       ||--o{ POI           : "parent_id (1:N)"
+    POI           ||--o{ product_locations : "area_id (1:N POI destination)"
+    products      ||--o{ product_locations : "product_id (1:N)"
 
     CONTINENT {
-        uuid    id          PK "e.g. area_asia_01"
-        varchar name        "Asia"
-        varchar code        "ASIA"
+        uuid    id          PK "e.g. area_eur_01"
+        varchar name        "Europe"
+        varchar code        "EUR"
         int     area_type   "1 (CONTINENT - root)"
     }
 
-    COUNTRY {
-        uuid    id          PK "e.g. area_jp_01"
+    SUB_CONTINENT {
+        uuid    id          PK "e.g. area_weur_01"
         uuid    parent_id   FK "references CONTINENT.id"
-        varchar name        "Japan"
-        varchar iso_code    "JP"
-        int     area_type   "2 (COUNTRY)"
+        varchar name        "Western Europe"
+        varchar code        "WEUR"
+        int     area_type   "2 (SUB_CONTINENT)"
     }
 
-    CITY {
-        uuid    id          PK "e.g. area_tyo_01"
+    COUNTRY {
+        uuid    id          PK "e.g. area_nl_01"
+        uuid    parent_id   FK "references SUB_CONTINENT.id"
+        varchar name        "Netherlands"
+        varchar iso_code    "NL"
+        int     area_type   "3 (COUNTRY)"
+    }
+
+    POI {
+        uuid    id          PK "e.g. area_keukenhof_01"
         uuid    parent_id   FK "references COUNTRY.id"
-        varchar name        "Tokyo"
-        varchar code        "JP-TYO"
-        int     area_type   "3 (CITY - Maximum Depth)"
+        varchar name        "Keukenhof Gardens"
+        varchar code        "NL-KEUKENHOF"
+        int     area_type   "4 (POI - Leaf Level)"
     }
 
     product_locations {
         uuid    id          PK "Destination stop"
         uuid    product_id  FK "references products.id"
-        uuid    area_id     FK "logical FK → CITY.id"
-        varchar area_name   "Tokyo (denormalized)"
+        uuid    area_id     FK "logical FK → POI.id"
+        varchar area_name   "Keukenhof Gardens (denormalized)"
     }
 
     products {
         uuid    id          PK "Tour product"
-        varchar code        "e.g. JAPAN-AUTUMN"
-        varchar slug        "japan-autumn"
+        varchar code        "e.g. GWE"
+        varchar slug        "grand-west-europe"
     }
 ```
 
@@ -259,22 +273,26 @@ erDiagram
 ```mermaid
 flowchart TB
 
-    ATYPE["area_types<br/>1: CONTINENT<br/>2: COUNTRY<br/>3: CITY"]
+    ATYPE["area_types<br/>1: CONTINENT<br/>2: SUB_CONTINENT<br/>3: COUNTRY<br/>4: POI"]
 
-    subgraph AH["Area Hierarchy Tree (Capped at City Level)"]
-        ROOT["areas<br/>Continent: Asia<br/>id: area_asia_01<br/>parent_id: NULL"]
+    subgraph AH["Area Hierarchy Tree (4-Tier Taxonomy)"]
+        ROOT["areas<br/>Continent: Europe<br/>id: area_eur_01<br/>parent_id: NULL"]
 
-        COUNTRY["areas<br/>Country: Japan<br/>id: area_jp_01<br/>parent_id: area_asia_01"]
+        SUBCONT["areas<br/>Sub Continent: Western Europe<br/>id: area_weur_01<br/>parent_id: area_eur_01"]
 
-        CITY["areas<br/>City: Tokyo<br/>id: area_tyo_01<br/>parent_id: area_jp_01"]
+        COUNTRY["areas<br/>Country: Netherlands<br/>id: area_nl_01<br/>parent_id: area_weur_01"]
+
+        POI["areas<br/>POI: Keukenhof Gardens<br/>id: area_keukenhof_01<br/>parent_id: area_nl_01"]
     end
 
     ATYPE -. "area_type_id = 1" .-> ROOT
-    ATYPE -. "area_type_id = 2" .-> COUNTRY
-    ATYPE -. "area_type_id = 3" .-> CITY
+    ATYPE -. "area_type_id = 2" .-> SUBCONT
+    ATYPE -. "area_type_id = 3" .-> COUNTRY
+    ATYPE -. "area_type_id = 4" .-> POI
 
-    ROOT -->|"parent_id"| COUNTRY
-    COUNTRY -->|"parent_id"| CITY
+    ROOT -->|"parent_id"| SUBCONT
+    SUBCONT -->|"parent_id"| COUNTRY
+    COUNTRY -->|"parent_id"| POI
 
     PROD["products<br/>Tours / Journeys"]
 
@@ -282,5 +300,5 @@ flowchart TB
 
     PROD -->|"product_id (1:N)"| PROD_LOC
 
-    CITY -->|"area_id (Logical FK to areas.id)"| PROD_LOC
+    POI -->|"area_id (Logical FK to areas.id)"| PROD_LOC
 ```

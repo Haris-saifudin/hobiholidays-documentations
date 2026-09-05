@@ -1,10 +1,10 @@
 # Area Domain — NestJS Backend Implementation Guide
 
 > **Pillar 3: NestJS Backend Implementation**
-> Backend engineering guide for the Area Domain subsystem, managing the **3-tier Geographic Hierarchy** (`Continent → Country → City`). Covers recursive Common Table Expressions (CTE) for tree traversal, PostGIS spatial boundary queries, autocomplete discovery, and in-memory reference caching.
+> Backend engineering guide for the Area Domain subsystem, managing the **4-tier Geographic Hierarchy** (`Continent → Sub Continent → Country → POI`). Covers recursive Common Table Expressions (CTE) for tree traversal, PostGIS spatial coordinate lookups, autocomplete discovery, and in-memory reference caching.
 >
-> **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)
-> **API Contract:** [Area Contracts](../contracts/area-contract.md)
+> **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)  
+> **API Contract:** [Area Contracts](../contracts/area-contract.md)  
 > **Frontend Guide:** [Area Frontend Guide](../frontend/area-frontend-guide.md)
 
 ---
@@ -17,7 +17,7 @@ The Area domain lives under `src/modules/area/`:
 src/modules/area/
 ├── area.module.ts
 ├── controllers/
-│   ├── area.controller.ts             # Public autocomplete, tree, and listings
+│   ├── area.controller.ts             # Public autocomplete, 4-tier tree, and listings
 │   └── area-admin.controller.ts       # Administrative CRUD operations
 ├── services/
 │   ├── area.service.ts                # Hierarchical tree & cache resolution
@@ -31,7 +31,7 @@ src/modules/area/
 
 ## 🌳 Hierarchical Tree Traversal via Recursive CTE
 
-The geographic model uses an adjacency list (`parent_id`) strictly capped at 3 tiers (`CONTINENT → COUNTRY → CITY`). The backend resolves ancestor/descendant paths via a recursive PostgreSQL Common Table Expression (CTE):
+The geographic model uses an adjacency list (`parent_id`) strictly structured across 4 tiers (`CONTINENT → SUB_CONTINENT → COUNTRY → POI`). The backend resolves ancestor/descendant paths via a recursive PostgreSQL Common Table Expression (CTE) or single-pass in-memory dictionary assembly:
 
 ```typescript
 // services/area.service.ts
@@ -48,49 +48,62 @@ export class AreaService {
   ) {}
 
   /**
-   * Returns full 3-tier hierarchical tree from cache or database.
+   * Returns full 4-tier hierarchical tree from cache or database.
    * Static reference data is cached for 24 hours.
    */
   async getHierarchyTree() {
-    const cacheKey = 'area_hierarchy_tree_v1';
+    const cacheKey = 'area_hierarchy_tree_v2';
     const cached = await this.cacheManager.get(cacheKey);
     if (cached) return cached;
 
-    // Fetch all 3 tiers in a single indexed query
+    // Fetch all 4 tiers in a single indexed query
     const areas = await this.dataSource.query(`
-      SELECT id, parent_id, name, slug, area_type, code, sort_order
-      FROM areas
-      WHERE status = 'ACTIVE'
-      ORDER BY area_type ASC, sort_order ASC, name ASC;
+      SELECT a.id, a.parent_id, a.name, a.slug, at.name AS area_type, a.code, a.sort_order
+      FROM areas a
+      INNER JOIN area_types at ON at.id = a.area_type_id
+      WHERE a.deleted_at IS NULL
+      ORDER BY a.area_type_id ASC, a.sort_order ASC, a.name ASC;
     `);
 
     // In-memory nesting assembly: O(N) single-pass dictionary assembly
     const continents: any[] = [];
+    const subContinentMap = new Map<string, any>();
     const countryMap = new Map<string, any>();
 
     areas.forEach((area: any) => {
       if (area.area_type === 'CONTINENT') {
-        continents.push({ ...area, countries: [] });
+        continents.push({ ...area, subContinents: [] });
+      } else if (area.area_type === 'SUB_CONTINENT') {
+        area.countries = [];
+        subContinentMap.set(area.id, area);
       } else if (area.area_type === 'COUNTRY') {
-        area.cities = [];
+        area.pois = [];
         countryMap.set(area.id, area);
       }
     });
 
-    // Attach countries to continents
-    countryMap.forEach((country) => {
-      const continent = continents.find((c) => c.id === country.parent_id);
+    // Attach sub-continents to continents
+    subContinentMap.forEach((subContinent) => {
+      const continent = continents.find((c) => c.id === subContinent.parent_id);
       if (continent) {
-        continent.countries.push(country);
+        continent.subContinents.push(subContinent);
       }
     });
 
-    // Attach cities to countries
+    // Attach countries to sub-continents
+    countryMap.forEach((country) => {
+      const subContinent = subContinentMap.get(country.parent_id);
+      if (subContinent) {
+        subContinent.countries.push(country);
+      }
+    });
+
+    // Attach POIs to countries
     areas.forEach((area: any) => {
-      if (area.area_type === 'CITY') {
+      if (area.area_type === 'POI') {
         const country = countryMap.get(area.parent_id);
         if (country) {
-          country.cities.push(area);
+          country.pois.push(area);
         }
       }
     });
@@ -103,6 +116,7 @@ export class AreaService {
 
   /**
    * Search widget autocomplete endpoint (powers the "Where To?" search dropdown)
+   * Matches across Continents, Sub Continents, Countries, and POIs.
    */
   async autocomplete(query: string, limit: number = 10) {
     const trimmed = query.trim();
@@ -113,7 +127,7 @@ export class AreaService {
         a.id,
         a.name,
         a.slug,
-        a.area_type,
+        at.name AS area_type,
         p.name AS parent_name,
         p.slug AS parent_slug,
         gp.name AS grandparent_name,
@@ -125,9 +139,10 @@ export class AreaService {
           WHERE pl.area_id = a.id AND prod.listing_status = 'ACTIVE'
         ) AS active_packages_count
       FROM areas a
+      INNER JOIN area_types at ON at.id = a.area_type_id
       LEFT JOIN areas p ON p.id = a.parent_id
       LEFT JOIN areas gp ON gp.id = p.parent_id
-      WHERE a.status = 'ACTIVE'
+      WHERE a.deleted_at IS NULL
         AND a.name ILIKE $1
       ORDER BY
         (CASE WHEN a.name ILIKE $2 THEN 1 ELSE 2 END) ASC,
@@ -144,7 +159,7 @@ export class AreaService {
 
 ## 🗺️ PostGIS Spatial Boundary Execution
 
-When calculating whether a tour coordinates stop falls inside an administrative territory:
+When calculating whether GPS coordinates fall inside an administrative boundary:
 
 ```typescript
 // services/area-spatial.service.ts
@@ -157,20 +172,23 @@ export class AreaSpatialService {
 
   /**
    * Checks if a GPS coordinate (latitude, longitude) falls inside
-   * an area's administrative boundary polygon.
+   * an area's administrative boundary polygon or matches nearest POI coordinates.
    */
   async findAreaByCoordinates(lat: number, lng: number) {
     const sql = `
-      SELECT id, name, slug, area_type
-      FROM areas
-      WHERE boundary IS NOT NULL
-        AND ST_Contains(boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326))
+      SELECT a.id, a.name, a.slug, at.name AS area_type
+      FROM areas a
+      INNER JOIN area_types at ON at.id = a.area_type_id
+      WHERE a.deleted_at IS NULL
+        AND a.boundary IS NOT NULL
+        AND ST_Contains(a.boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326))
       ORDER BY
-        (CASE area_type
-          WHEN 'CITY' THEN 1
+        (CASE at.name
+          WHEN 'POI' THEN 1
           WHEN 'COUNTRY' THEN 2
-          WHEN 'CONTINENT' THEN 3
-          ELSE 4 END) ASC
+          WHEN 'SUB_CONTINENT' THEN 3
+          WHEN 'CONTINENT' THEN 4
+          ELSE 5 END) ASC
       LIMIT 1;
     `;
 

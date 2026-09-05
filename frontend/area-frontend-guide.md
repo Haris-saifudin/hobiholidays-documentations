@@ -1,17 +1,17 @@
 # Area & Destination Hubs — Next.js Frontend Implementation Guide
 
 > **Pillar 4: Next.js Frontend Implementation**
-> Frontend implementation guide for the **Area & Geography Domain**. Covers the **"Where To?" Search Autocomplete Widget** (`AreaAutocomplete`), debounced async searching, 3-tier hierarchical dropdown categorization (Continent/Country/City), and Destination Landing Hubs (`app/destinations/[slug]/page.tsx`).
+> Frontend implementation guide for the **Area & Geography Domain**. Covers the **"Where To?" Search Autocomplete Widget** (`AreaAutocomplete`), debounced async searching, 4-tier hierarchical dropdown categorization (`Continent → Sub Continent → Country → POI`), and Destination Landing Hubs (`app/destinations/[slug]/page.tsx`).
 >
-> **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)
-> **API Contract:** [Area Contracts](../contracts/area-contract.md)
+> **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)  
+> **API Contract:** [Area Contracts](../contracts/area-contract.md)  
 > **Backend Guide:** [Area Backend Guide](../backend/area-backend-guide.md)
 
 ---
 
 ## 🔍 "Where To?" Search Autocomplete Widget
 
-The autocomplete widget provides instant discovery across Continents, Countries, and Cities as the user types in the homepage hero or global header:
+The autocomplete widget provides instant discovery across Continents, Sub Continents, Countries, and POIs as the traveler types in the homepage hero or global header:
 
 ```tsx
 // components/search/area-autocomplete.tsx
@@ -24,7 +24,7 @@ export interface AreaSuggestion {
   id: string;
   name: string;
   slug: string;
-  areaType: 'CONTINENT' | 'COUNTRY' | 'CITY';
+  areaType: 'CONTINENT' | 'SUB_CONTINENT' | 'COUNTRY' | 'POI';
   parentName?: string;
   grandparentName?: string;
   activePackagesCount: number;
@@ -69,11 +69,13 @@ export function AreaAutocomplete() {
     setIsOpen(false);
     setQuery(area.name);
     if (area.areaType === 'CONTINENT') {
-      router.push(`/tours?continent=${area.slug}`);
+      router.push(`/tours?continentSlug=${area.slug}`);
+    } else if (area.areaType === 'SUB_CONTINENT') {
+      router.push(`/tours?subContinentSlug=${area.slug}`);
     } else if (area.areaType === 'COUNTRY') {
-      router.push(`/tours?country=${area.slug}`);
+      router.push(`/tours?countrySlug=${area.slug}`);
     } else {
-      router.push(`/destinations/${area.slug}`);
+      router.push(`/tours?poiSlug=${area.slug}`);
     }
   };
 
@@ -84,7 +86,7 @@ export function AreaAutocomplete() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Mau liburan ke mana? (e.g. Paris, Swiss, Eropa)"
+          placeholder="Mau liburan ke mana? (e.g. Eiffel Tower, Keukenhof, Paris, Eropa)"
           className="w-full px-5 py-3.5 pl-12 rounded-2xl border border-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
         />
         <span className="absolute left-4 top-3.5 text-gray-400">🔍</span>
@@ -105,8 +107,9 @@ export function AreaAutocomplete() {
               <div>
                 <p className="text-sm font-semibold text-gray-900">{item.name}</p>
                 <p className="text-xs text-gray-500">
-                  {item.areaType === 'CITY' && `${item.parentName}, ${item.grandparentName}`}
+                  {item.areaType === 'POI' && `Destinasi di ${item.parentName}`}
                   {item.areaType === 'COUNTRY' && `Negara di ${item.parentName}`}
+                  {item.areaType === 'SUB_CONTINENT' && `Kawasan di ${item.parentName}`}
                   {item.areaType === 'CONTINENT' && 'Benua'}
                 </p>
               </div>
@@ -143,7 +146,7 @@ export default async function DestinationPage({ params }: Props) {
 
   try {
     destination = await fetchApi(`/areas/${params.slug}`);
-    packages = await fetchApi(`/variants/search?country=${params.slug}&limit=12`);
+    packages = await fetchApi(`/variants/search?countrySlug=${params.slug}&limit=12`);
   } catch (err) {
     notFound();
   }
@@ -167,7 +170,7 @@ export default async function DestinationPage({ params }: Props) {
       {/* Tours Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {packages.map((v) => (
-          <VariantCard key={v.id} variant={v} />
+          <VariantCard key={v.variantId || v.id} variant={v} />
         ))}
       </div>
     </main>
