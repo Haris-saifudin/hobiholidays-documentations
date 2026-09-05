@@ -17,7 +17,7 @@ hobiholidays-documentations/
 │   ├── README.md                          # Technical standards, PostgreSQL DDL conventions, ERDs
 │   ├── product-technical-design.md        # Authoritative PostgreSQL DDL, core ERD, audit triggers
 │   ├── product-hierarchy-technical-design.md # 3-Level hierarchy mental model, cascade rules, quota
-│   ├── area-technical-design.md           # 3-Tier geography tree, closure pattern, PostGIS
+│   ├── area-technical-design.md           # 4-Tier geography tree (Continent → Sub Continent → Country → POI), PostGIS
 │   ├── product-search-filter-technical-design.md # SQL join mechanics, trigram GIN, window functions
 │   ├── product-media-technical-design.md  # 2-Phase storage architecture, binary blobs, 1:1 PDF
 │   └── seo-technical-design.md            # Polymorphic SEO schema, formula matrix, rich snippets
@@ -26,7 +26,7 @@ hobiholidays-documentations/
 │   ├── README.md                          # Global standards, base URL, pagination, RFC 7807 errors
 │   ├── product-contract.md                # Base Product CRUD, split sub-resources, trips, pricings
 │   ├── product-hierarchy-contract.md      # All Tours catalog feed, variant detail view contract
-│   ├── area-contract.md                   # Area types, Continents/Countries/Cities, autocomplete
+│   ├── area-contract.md                   # Area types, Continents/Sub Continents/Countries/POIs, autocomplete
 │   ├── product-search-filter-contract.md  # Search DTO, filters, paginated response, totalPackages
 │   ├── product-media-contract.md          # Multipart upload, streaming, S3 presigned, usages
 │   └── seo-contract.md                    # Polymorphic SEO metadata CRUD & bulk retrieval
@@ -43,7 +43,7 @@ hobiholidays-documentations/
 └── frontend/                              # PILLAR 4: Next.js Frontend Implementation Guides
     ├── README.md                          # Next.js 15 App Router structure, RSC vs Client boundary
     ├── product-frontend-guide.md          # PDP tabs, split sub-resource fetching, brochure download
-    ├── product-hierarchy-frontend-guide.md# All Tours catalog card, variant badging, nationality pricing
+    ├── product-hierarchy-frontend-guide.md# All Tours catalog card, category & variant badging, Adult price
     ├── area-frontend-guide.md             # Where To? autocomplete widget, destination landing pages
     ├── product-search-filter-frontend-guide.md # URL query sync (useSearchParams), filter sidebar
     ├── product-media-frontend-guide.md    # next/image remotePatterns, responsive presets, blurhash
@@ -65,6 +65,34 @@ Every core domain in the Hobiholidays platform maps across all four pillars:
 | **Search & Discovery** | [product-search-filter-technical-design.md](./technical/product-search-filter-technical-design.md) | [product-search-filter-contract.md](./contracts/product-search-filter-contract.md) | [product-search-filter-backend-guide.md](./backend/product-search-filter-backend-guide.md) | [product-search-filter-frontend-guide.md](./frontend/product-search-filter-frontend-guide.md) |
 | **Media Subsystem** | [product-media-technical-design.md](./technical/product-media-technical-design.md) | [product-media-contract.md](./contracts/product-media-contract.md) | [product-media-backend-guide.md](./backend/product-media-backend-guide.md) | [product-media-frontend-guide.md](./frontend/product-media-frontend-guide.md) |
 | **SEO & Rich Snippets** | [seo-technical-design.md](./technical/seo-technical-design.md) | [seo-contract.md](./contracts/seo-contract.md) | [seo-backend-guide.md](./backend/seo-backend-guide.md) | [seo-frontend-guide.md](./frontend/seo-frontend-guide.md) |
+
+---
+
+## 🚀 Platform Roadmap & Architecture Phasing
+
+The platform engineering lifecycle is organized into structured development phases:
+
+### Phase 1: Core Catalog, Discovery & SEO (Current Scope — Authoritative & Complete)
+The documentation in this repository currently defines the complete, authoritative specification for **Phase 1**:
+- **Product Core & Master Catalog:** Master brand umbrella (`products`), 2-tier Category taxonomy, journey durations, destination markers, and supplementary inclusions.
+- **Product Hierarchy:** 3-Level hierarchy (`Product → Variant → Trip → Pricing`), duration inheritance (`COALESCE`), pessimistic locking (`SELECT FOR UPDATE`), relational promotional badges (`product_badges`), and itemized cost breakdown components (`product_pricing_components`).
+- **Area & Geography:** 4-Tier geographic taxonomy (`Continent → Sub Continent → Country → POI`), PostGIS spatial coordinates, recursive CTE tree traversal, and "Where To?" autocomplete.
+- **Search & Dynamic Discovery:** Trigram fuzzy matching (`pg_trgm`), windowed total counts (`COUNT(*) OVER()`), and dynamic active-only filter options aggregation (`/api/v1/variants/search/filter-options`).
+- **Media Subsystem:** 2-Phase progressive storage (Database BYTEA binary blobs for zero-dependency local dev vs Cloud AWS S3/Cloudflare R2 presigned URLs).
+- **SEO & Rich Snippets:** Polymorphic SEO schema (`seo_metadata`), programmatic dynamic fallbacks, Google Rich Results (Schema.org `TouristTrip` & `Offer`), dynamic sitemaps, and robots.txt.
+
+---
+
+### Subsequent Development Phases (Scheduled Roadmap)
+The following e-commerce domains are intentionally scheduled for subsequent phases:
+- **Phase 2: Authentication, Authorization & User Management**
+  - AWS Cognito User Pool integration, custom password API endpoints, better-auth session cookies, and RBAC guards (`CUSTOMER`, `AGENT`, `ADMIN`).
+- **Phase 3: Booking & Reservation Engine**
+  - Booking drafts (`POST /api/v1/bookings/draft`), dynamic checkout forms, lead passenger & companion validation, dynamic questions, and pessimistic quota reservation TTL.
+- **Phase 4: Payments & Transaction Processing**
+  - Payment gateway adapters (Duitku, Midtrans, Xendit), QRIS dynamic image generation & countdown, Virtual Accounts, webhook HMAC verification, and payment status synchronization.
+- **Phase 5: Customer Portal, Ancillaries & Community**
+  - Traveler portal ("My Bookings"), PDF travel vouchers & invoices, airport lounge reservations, and verified traveler reviews & ratings (`TouristTrip` UGC).
 
 ---
 

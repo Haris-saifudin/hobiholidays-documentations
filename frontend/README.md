@@ -11,10 +11,10 @@
 
 | Guide Document | Domain Scope | Primary Frontend Implementation Focus |
 | :--- | :--- | :--- |
-| **[Product Frontend Guide](./product-frontend-guide.md)** | Product Detail Page (PDP) | PDP tabbed architecture, streaming sub-resource data fetching with React Suspense, official itinerary PDF brochure viewer, and breadcrumbs. |
-| **[Product Hierarchy Frontend Guide](./product-hierarchy-frontend-guide.md)** | Catalog Feed & Cards | All Tours listing page (`/tours`), bookable Variant Card component, variant type badging system (`STANDARD`, `SEASONAL`, `THEMED`, `PROMOTIONAL`), and departure calendar picker. |
-| **[Area Domain Frontend Guide](./area-frontend-guide.md)** | Discovery & Geography | "Where To?" search autocomplete widget (hero & navbar), 3-tier hierarchical dropdown (Continent/Country/City), and destination landing hubs (`/destinations/[slug]`). |
-| **[Search & Filter Frontend Guide](./product-search-filter-frontend-guide.md)** | Catalog Search & Filter UI | Bidirectional URL query synchronization (`useSearchParams`, `useRouter`), filter sidebar (Price slider, Month picker, Total Pack counter), active chips, and skeleton states. |
+| **[Product Frontend Guide](./product-frontend-guide.md)** | Product Detail Page (PDP) | PDP tabbed architecture, streaming sub-resource data fetching with React Suspense, Variant master itinerary with Trip override indicators, Add-on selector, itemized pricing breakdown drawer, and official PDF brochure viewer. |
+| **[Product Hierarchy Frontend Guide](./product-hierarchy-frontend-guide.md)** | Catalog Feed & Cards | All Tours listing page (`/tours`), bookable Variant Card component, 2-tier Category badging (`Tour Series` / `Classic Series`), variant type badges, and departure calendar picker with Adult starting price. |
+| **[Area Domain Frontend Guide](./area-frontend-guide.md)** | Discovery & Geography | "Where To?" search autocomplete widget (hero & navbar), 4-tier hierarchical dropdown (`Continent → Sub Continent → Country → POI`), and destination landing hubs (`/destinations/[slug]`). |
+| **[Search & Filter Frontend Guide](./product-search-filter-frontend-guide.md)** | Catalog Search & Filter UI | Bidirectional URL query synchronization (`useSearchParams`, `useRouter`), filter sidebar (2-tier Category filters, 4-tier destination pickers, Price slider, Month picker, Total Pack counter), active chips, and skeleton states. |
 | **[Product Media Frontend Guide](./product-media-frontend-guide.md)** | Media & Image Optimization | Complete `next/image` integration, `remotePatterns` configuration for Phase 1 stream API vs Phase 2 Cloudflare CDN, responsive image presets, and gallery carousel. |
 | **[SEO Frontend Guide](./seo-frontend-guide.md)** | SEO & Google Rich Snippets | Dynamic `generateMetadata()` implementation, Schema.org JSON-LD structured data injection (`TouristTrip`, `Offer`, `BreadcrumbList`), dynamic `app/sitemap.ts`, and `app/robots.ts`. |
 

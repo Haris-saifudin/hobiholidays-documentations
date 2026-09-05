@@ -85,7 +85,7 @@ export class SeoService {
             SELECT MIN(ptp.selling_price)
             FROM product_trips pt
             INNER JOIN product_trip_pricings ptp ON ptp.trip_id = pt.id
-            WHERE pt.variant_id = v.id AND pt.status = 'ACTIVE' AND pt.start_date >= CURRENT_DATE
+            WHERE pt.variant_id = v.id AND pt.status = 'ACTIVE' AND pt.start_date >= CURRENT_DATE AND ptp.age_band = 'ADULT'
           ) AS starting_price,
           (
             SELECT m.url FROM product_media_usages pmu
@@ -96,7 +96,7 @@ export class SeoService {
           ) AS cover_url
         FROM product_variants v
         INNER JOIN products p ON p.id = v.product_id
-        LEFT JOIN product_journeys pj ON pj.product_id = p.id AND pj.nationality_scope = 'ALL'
+        LEFT JOIN product_journeys pj ON pj.product_id = p.id
         WHERE v.id = $1
         LIMIT 1;
       `, [targetId]);

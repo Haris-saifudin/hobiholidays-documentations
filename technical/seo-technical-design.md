@@ -227,7 +227,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const description =
     variant.seo?.metaDescription ||
-    `Ikuti tour ${variant.name} mengunjungi ${variant.destinations.map((d: any) => d.city).join(', ')}. Mulai IDR ${new Intl.NumberFormat('id-ID').format(variant.startingPrice)}.`;
+    `Ikuti tour ${variant.name} mengunjungi ${variant.destinations.map((d: any) => d.poi || d.country).join(', ')}. Mulai IDR ${new Intl.NumberFormat('id-ID').format(variant.startingPrice)}.`;
 
   const canonicalUrl =
     variant.seo?.canonicalUrl ||

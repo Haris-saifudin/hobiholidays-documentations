@@ -11,9 +11,9 @@
 
 | Guide Document | Domain Scope | Primary Backend Implementation Focus |
 | :--- | :--- | :--- |
-| **[Product Backend Guide](./product-backend-guide.md)** | Master Products & Catalog | `ProductModule`, `ProductService`, split sub-resource controller architecture (`/media`, `/itineraries`, `/locations`, `/variants`, `/supplementaries`, `/seo`), and transaction boundaries. |
-| **[Product Hierarchy Backend Guide](./product-hierarchy-backend-guide.md)** | 3-Level Catalog & Booking | `ProductHierarchyService`, `COALESCE` duration inheritance query, pessimistic locking (`SELECT ... FOR UPDATE`) during booking transactions to prevent quota over-allocation. |
-| **[Area Domain Backend Guide](./area-backend-guide.md)** | Geographic Domain | `AreaModule`, `AreaService`, recursive Common Table Expression (CTE) tree traversal queries, PostGIS boundary calculations, and in-memory reference caching. |
+| **[Product Backend Guide](./product-backend-guide.md)** | Master Products & Catalog | `ProductModule`, `CategoryModule`, split sub-resource controllers (`/media`, `/locations`, `/variants`, `/supplementaries`, `/seo`), Variant Itineraries & Add-ons, Trip age-band pricings with components, and transaction boundaries. |
+| **[Product Hierarchy Backend Guide](./product-hierarchy-backend-guide.md)** | 3-Level Catalog & Booking | `ProductHierarchyService`, `COALESCE` duration inheritance, variant/trip itinerary fallback resolution (`trip.itinerary ?? variant.itinerary`), pessimistic locking (`SELECT ... FOR UPDATE`) with `consumes_quota` seat allocation. |
+| **[Area Domain Backend Guide](./area-backend-guide.md)** | Geographic Domain | `AreaModule`, `AreaService`, recursive Common Table Expression (CTE) 4-tier tree traversal queries (`Continent → Sub Continent → Country → POI`), PostGIS coordinates calculations, and in-memory reference caching. |
 | **[Search & Filter Backend Guide](./product-search-filter-backend-guide.md)** | Discovery Engine | `SearchFilterService`, parameterized dynamic SQL query builder, trigram similarity matching (`pg_trgm`), and window function result counting (`COUNT(*) OVER()`). |
 | **[Product Media Backend Guide](./product-media-backend-guide.md)** | Media Subsystem | `MediaModule`, Multer 25MB file interceptor, `BYTEA` streaming controller with HTTP cache headers, AWS SDK S3 presigned URL generator, and zero-downtime Phase 1 to Phase 2 migration script. |
 | **[SEO Backend Guide](./seo-backend-guide.md)** | SEO & Structured Data | `SeoModule`, `SeoService`, polymorphic fallback resolver (Layer A custom DB vs Layer B formulaic dynamic fallback), and Schema.org JSON-LD generator helper. |
@@ -44,9 +44,10 @@ src/
 ├── config/                  # Environment config validation (@nestjs/config)
 ├── database/                # DatabaseModule, TypeORM / Kysely connection pool
 └── modules/
+    ├── category/            # CategoryModule (2-Tier Parent-Child Taxonomy)
     ├── product/             # ProductModule (L1 Master Catalog)
-    ├── product-hierarchy/   # ProductHierarchyModule (L2/L3 Variant, Trip, Pricing)
-    ├── area/                # AreaModule (Continents, Countries, Cities)
+    ├── product-hierarchy/   # ProductHierarchyModule (L2/L3 Variant, Trip, Pricing, Add-ons)
+    ├── area/                # AreaModule (Continents, Sub-Continents, Countries, POIs)
     ├── search/              # SearchFilterModule (Search & Filter Query Engine)
     ├── media/               # MediaModule (Phase 1 BYTEA & Phase 2 S3/R2)
     └── seo/                 # SeoModule (Polymorphic Metadata & Fallbacks)
