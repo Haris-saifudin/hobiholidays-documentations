@@ -19,7 +19,7 @@ src/modules/media/
 ├── media.module.ts
 ├── controllers/
 │   ├── product-media.controller.ts       # Uploads, presigned URLs, and usages
-│   └── media-stream.controller.ts        # Phase 1 binary streaming & PDF download
+│   └── media-stream.controller.ts        # Phase 1 binary streaming (images & videos)
 ├── services/
 │   ├── product-media.service.ts          # Metadata persistence & usage bindings
 │   ├── database-blob.service.ts          # Phase 1 BYTEA read/write
@@ -61,8 +61,7 @@ export class ProductMediaController {
       limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB max limit
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
-          'image/jpeg', 'image/png', 'image/webp',
-          'application/pdf', 'video/mp4',
+          'image/jpeg', 'image/png', 'image/webp', 'video/mp4',
         ];
         if (allowedMimes.includes(file.mimetype)) {
           cb(null, true);
@@ -129,36 +128,12 @@ export class MediaStreamController {
 
     return res.send(blob.file_data);
   }
-
-  /**
-   * Serves PDF brochure download with Content-Disposition attachment header
-   */
-  @Get(':id/download')
-  async downloadBrochure(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Res() res: Response,
-  ) {
-    const { metadata, blob } = await this.mediaService.getMediaWithBlob(id);
-
-    if (!blob || !blob.file_data) {
-      throw new NotFoundException('PDF binary data not found');
-    }
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Length': metadata.file_size_bytes,
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.file_name)}"`,
-      'Cache-Control': 'public, max-age=86400',
-    });
-
-    return res.send(blob.file_data);
-  }
 }
 ```
 
 ### 3. Media Subsystem Service (`ProductMediaService`)
 
-Handles atomic database transactions for saving binary buffers, usage bindings, and the strict 1:1 itinerary PDF brochure guarantee:
+Handles atomic database transactions for saving binary buffers and polymorphic usage bindings:
 
 ```typescript
 // services/product-media.service.ts
@@ -251,7 +226,7 @@ export class ProductMediaService {
     mediaId: string;
     targetType: 'PRODUCT' | 'VARIANT' | 'ITINERARY_ITEM';
     targetId: string;
-    usageContext: 'COVER' | 'GALLERY' | 'THUMBNAIL' | 'ITINERARY_PDF' | 'ATTACHMENT';
+    usageContext: 'COVER' | 'GALLERY' | 'THUMBNAIL' | 'ATTACHMENT';
     sortOrder?: number;
   }) {
     const result = await this.dataSource.query(`
@@ -265,57 +240,11 @@ export class ProductMediaService {
   }
 
   /**
-   * Sets the single official itinerary PDF brochure and synchronizes products.itinerary_pdf_url.
+   * Note: Itinerary PDF brochures are compiled externally by ATW.
+   * Hobiholidays does not process, upload, or store PDF binaries in product_media.
+   * Instead, products.itinerary_pdf_url and product_variants.itinerary_pdf_url
+   * store the external ATW brochure URL directly via catalog update endpoints.
    */
-  async setItineraryPdf(productId: string, mediaId: string) {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      // 1. Verify media exists and is PDF
-      const mediaRows = await queryRunner.query(
-        `SELECT id, url, media_type FROM product_media WHERE id = $1 AND product_id = $2`,
-        [mediaId, productId],
-      );
-      if (!mediaRows.length || mediaRows[0].media_type !== 'PDF') {
-        throw new BadRequestException('Selected media must be a valid PDF document belonging to this product');
-      }
-
-      // 2. Remove existing ITINERARY_PDF usage for this product
-      await queryRunner.query(
-        `DELETE FROM product_media_usages WHERE target_type = 'PRODUCT' AND target_id = $1 AND usage_context = 'ITINERARY_PDF'`,
-        [productId],
-      );
-
-      // 3. Insert new 1:1 ITINERARY_PDF usage
-      await queryRunner.query(
-        `INSERT INTO product_media_usages (media_id, target_type, target_id, usage_context, sort_order)
-         VALUES ($1, 'PRODUCT', $2, 'ITINERARY_PDF', 0)`,
-        [mediaId, productId],
-      );
-
-      // 4. Update denormalized fast-read column on products
-      const pdfUrl = mediaRows[0].url;
-      await queryRunner.query(
-        `UPDATE products SET itinerary_pdf_url = $1, updated_at = NOW() WHERE id = $2`,
-        [pdfUrl, productId],
-      );
-
-      await queryRunner.commitTransaction();
-
-      return {
-        productId,
-        mediaId,
-        itineraryPdfUrl: pdfUrl,
-      };
-    } catch (err) {
-      await queryRunner.rollbackTransaction();
-      throw err;
-    } finally {
-      await queryRunner.release();
-    }
-  }
 }
 ```
 
@@ -423,14 +352,7 @@ export async function migrateMediaToCloud() {
         WHERE id = $3
       `, [objectKey, cdnUrl, media.id]);
 
-      // 3. Update denormalized itinerary_pdf_url if applicable
-      await client.query(`
-        UPDATE products
-        SET itinerary_pdf_url = $1
-        WHERE id = $2 AND itinerary_pdf_url LIKE '%/api/v1/media/' || $3 || '/%'
-      `, [cdnUrl, media.product_id, media.id]);
-
-      // 4. Delete binary data from database to reclaim disk space
+      // 3. Delete binary data from database to reclaim disk space
       await client.query(`DELETE FROM product_media_blobs WHERE media_id = $1`, [media.id]);
 
       console.log(`✓ Migrated: ${media.file_name} -> ${cdnUrl}`);

@@ -5,7 +5,7 @@
 > - **Phase 1 (Database-First / Zero External Infrastructure):** Binary files are stored directly within PostgreSQL using a dedicated binary blob table (`product_media_blobs`) and streamed via NestJS endpoints (`/api/v1/media/:id/stream`).
 > - **Phase 2 (Cloud Storage & CDN):** High-scale offloading to Cloud Object Storage (AWS S3 / Cloudflare R2) with CDN edge delivery and direct-to-storage presigned uploads.
 >
-> _Engineered to guarantee zero code breaking changes between Phase 1 and Phase 2, with strict 1:1 Itinerary PDF brochure enforcement and polymorphic asset binding._
+> _Engineered to guarantee zero code breaking changes between Phase 1 and Phase 2, with polymorphic visual asset binding (images and videos). Tour itinerary PDF brochures are compiled externally by ATW and referenced directly via `itinerary_pdf_url`._
 
 > **See Also:**
 > - [Product Technical Design](./product-technical-design.md)
@@ -69,7 +69,7 @@ Zero database bloat. Presigned direct uploads + Cloudflare CDN edge caching.
 ### Why Separate Metadata from Binary Data in Phase 1?
 Storing binary files (`BYTEA`) directly in the main `product_media` table would cause massive database page bloat, slowing down standard product catalog queries and indexing.
 - **`product_media` (Lightweight Table):** Stores only metadata (`file_name`, `mime_type`, `file_size_bytes`, `storage_provider`, `url`). Fast scans, zero bloat.
-- **`product_media_blobs` (Binary Isolation Table):** Stores `(media_id PK/FK, file_data BYTEA)`. Loaded **only** when a client actually requests image pixels or downloads the PDF brochure.
+- **`product_media_blobs` (Binary Isolation Table):** Stores `(media_id PK/FK, file_data BYTEA)`. Loaded **only** when a client actually requests image pixels or video streams.
 
 ---
 
@@ -85,16 +85,16 @@ CREATE TABLE product_media (
     product_id       UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     storage_provider VARCHAR(50)  NOT NULL DEFAULT 'DATABASE', -- DATABASE (Phase 1) | S3 | CLOUDFLARE_R2 (Phase 2)
     source_upload_id VARCHAR(255),                          -- External upload service or CDN reference ID
-    media_type       VARCHAR(50)  NOT NULL,                  -- IMAGE | VIDEO | PDF
-    file_name        VARCHAR(255) NOT NULL,                 -- e.g. Grand-West-Europe-Brochure.pdf
+    media_type       VARCHAR(50)  NOT NULL,                  -- IMAGE | VIDEO
+    file_name        VARCHAR(255) NOT NULL,                 -- e.g. gwe-hero-paris.jpg
     file_size_bytes  BIGINT       NOT NULL,                 -- File size in bytes for UI badges
-    mime_type        VARCHAR(100) NOT NULL,                 -- e.g. application/pdf, image/jpeg, video/mp4
+    mime_type        VARCHAR(100) NOT NULL,                 -- e.g. image/jpeg, image/webp, video/mp4
     object_key       VARCHAR(500) NULL,                     -- S3/R2 key (NULL in Phase 1, required in Phase 2)
     url              VARCHAR(500) NOT NULL,                 -- Relative URL in Phase 1, CDN URL in Phase 2
     created_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT chk_media_type             CHECK (media_type IN ('IMAGE', 'VIDEO', 'PDF')),
+    CONSTRAINT chk_media_type             CHECK (media_type IN ('IMAGE', 'VIDEO')),
     CONSTRAINT chk_media_storage_provider CHECK (storage_provider IN ('DATABASE', 'S3', 'CLOUDFLARE_R2'))
 );
 
@@ -121,23 +121,18 @@ CREATE TABLE product_media_usages (
     media_id      UUID        NOT NULL REFERENCES product_media(id) ON DELETE CASCADE,
     target_type   VARCHAR(50) NOT NULL,    -- PRODUCT | VARIANT | ITINERARY_ITEM
     target_id     UUID        NOT NULL,    -- Polymorphic UUID — resolved by target_type
-    usage_context VARCHAR(50) NOT NULL,    -- COVER | GALLERY | THUMBNAIL | ITINERARY_PDF | ATTACHMENT
+    usage_context VARCHAR(50) NOT NULL,    -- COVER | GALLERY | THUMBNAIL | ATTACHMENT
     sort_order    INT         NOT NULL DEFAULT 0,
     created_at    TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT chk_media_target_type   CHECK (target_type IN ('PRODUCT', 'VARIANT', 'ITINERARY_ITEM')),
-    CONSTRAINT chk_media_usage_context CHECK (usage_context IN ('COVER', 'GALLERY', 'THUMBNAIL', 'ITINERARY_PDF', 'ATTACHMENT'))
+    CONSTRAINT chk_media_usage_context CHECK (usage_context IN ('COVER', 'GALLERY', 'THUMBNAIL', 'ATTACHMENT'))
 );
 
 -- Composite index for fast polymorphic lookups
 CREATE INDEX idx_media_usages_target
     ON product_media_usages(target_type, target_id);
-
--- Enforce strict 1:1 rule: exactly 1 active ITINERARY_PDF per Product
-CREATE UNIQUE INDEX uq_media_usages_product_itinerary_pdf
-    ON product_media_usages(target_id, usage_context)
-    WHERE target_type = 'PRODUCT' AND usage_context = 'ITINERARY_PDF';
 
 -- Enforce single COVER image per entity target
 CREATE UNIQUE INDEX uq_media_usages_single_cover
@@ -166,7 +161,9 @@ erDiagram
     product_media ||--o| product_media_blobs : "binary data (Phase 1)"
     product_media ||--o{ product_media_usages : "media_id"
     products ||--o{ product_variants : "product_id"
-    products ||--o{ product_itineraries : "product_id"
+    product_variants ||--o{ product_trips : "variant_id"
+    product_variants ||--o{ product_itineraries : "variant_id (default)"
+    product_trips ||--o| product_itineraries : "trip_id (override)"
     product_itineraries ||--o{ product_itinerary_items : "itinerary_id"
 
     products ||--o{ product_media_usages : "polymorphic target (PRODUCT)"
@@ -176,17 +173,17 @@ erDiagram
     products {
         uuid      id                 PK
         varchar   name               "Grand West Europe"
-        varchar   itinerary_pdf_url  "Denormalized URL for O(1) reads"
+        varchar   itinerary_pdf_url  "ATW brochure PDF URL (independent of product_media)"
     }
 
     product_media {
         uuid      id                 PK
         uuid      product_id         FK
         varchar   storage_provider   "DATABASE | S3 | CLOUDFLARE_R2"
-        varchar   media_type         "IMAGE | VIDEO | PDF"
+        varchar   media_type         "IMAGE | VIDEO"
         varchar   file_name          "Original filename"
         bigint    file_size_bytes    "File size in bytes"
-        varchar   mime_type          "image/jpeg, application/pdf"
+        varchar   mime_type          "image/jpeg, image/webp, video/mp4"
         varchar   object_key         "Nullable in Phase 1, S3 key in Phase 2"
         varchar   url                "Stream URL (Phase 1) or CDN URL (Phase 2)"
     }
@@ -202,7 +199,7 @@ erDiagram
         uuid      media_id           FK
         varchar   target_type        "PRODUCT | VARIANT | ITINERARY_ITEM"
         uuid      target_id          "Polymorphic FK"
-        varchar   usage_context      "COVER | GALLERY | THUMBNAIL | ITINERARY_PDF"
+        varchar   usage_context      "COVER | GALLERY | THUMBNAIL | ATTACHMENT"
         int       sort_order         "Display order"
     }
 ```
@@ -257,8 +254,8 @@ import { IsIn, IsString } from 'class-validator';
 
 export class UploadMediaDto {
   @IsString()
-  @IsIn(['IMAGE', 'VIDEO', 'PDF'])
-  mediaType: 'IMAGE' | 'VIDEO' | 'PDF';
+  @IsIn(['IMAGE', 'VIDEO'])
+  mediaType: 'IMAGE' | 'VIDEO';
 }
 ```
 
@@ -307,23 +304,6 @@ export class MediaStreamController {
 
     return res.send(blob.file_data);
   }
-
-  @Get(':id/download')
-  async downloadMedia(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Res() res: Response,
-  ) {
-    const { metadata, blob } = await this.mediaService.getMediaWithBlob(id);
-
-    res.set({
-      'Content-Type': metadata.mime_type,
-      'Content-Length': metadata.file_size_bytes,
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(metadata.file_name)}"`,
-      'Cache-Control': 'public, max-age=86400',
-    });
-
-    return res.send(blob.file_data);
-  }
 }
 ```
 
@@ -361,8 +341,8 @@ export class AttachMediaUsageDto {
   targetId: string;
 
   @IsString()
-  @IsIn(['COVER', 'GALLERY', 'THUMBNAIL', 'ITINERARY_PDF', 'ATTACHMENT'])
-  usageContext: 'COVER' | 'GALLERY' | 'THUMBNAIL' | 'ITINERARY_PDF' | 'ATTACHMENT';
+  @IsIn(['COVER', 'GALLERY', 'THUMBNAIL', 'ATTACHMENT'])
+  usageContext: 'COVER' | 'GALLERY' | 'THUMBNAIL' | 'ATTACHMENT';
 
   @IsInt()
   @Min(0)
@@ -370,18 +350,12 @@ export class AttachMediaUsageDto {
 }
 ```
 
-#### 2. Set Official Itinerary PDF Brochure (`PUT /api/v1/products/:productId/itinerary-pdf`)
-Sets the single official PDF brochure and updates `products.itinerary_pdf_url`:
+#### 2. Official Itinerary PDF Brochure Integration (ATW External Compilation)
 
-```typescript
-// dto/set-itinerary-pdf.dto.ts
-import { IsUUID } from 'class-validator';
-
-export class SetItineraryPdfDto {
-  @IsUUID('4')
-  mediaId: string; // Valid product_media record where media_type = 'PDF'
-}
-```
+> [!IMPORTANT]
+> Official tour itinerary PDF brochures are compiled externally by **ATW**.
+> They are **not** uploaded or processed through the `product_media` pipeline, nor are they stored in `product_media_blobs`.
+> Instead, the external ATW brochure URL is stored directly in `products.itinerary_pdf_url` (default) and `product_variants.itinerary_pdf_url` (edition-specific override).
 
 ---
 
@@ -465,22 +439,22 @@ sequenceDiagram
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `media_hero_01` | `prod_gwe_01` | **`DATABASE`** (P1) | IMAGE | `gwe-hero-paris.jpg` | 2410500 | image/jpeg | *NULL* | `/api/v1/media/media_hero_01/stream` |
 | `media_hero_01` | `prod_gwe_01` | **`S3`** (P2) | IMAGE | `gwe-hero-paris.jpg` | 2410500 | image/jpeg | `products/gwe/gwe-hero-paris.jpg` | `https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg` |
-| `media_pdf_01` | `prod_gwe_01` | **`DATABASE`** (P1) | PDF | `GWE-Brochure-2026.pdf` | 4613734 | application/pdf | *NULL* | `/api/v1/media/media_pdf_01/download` |
-| `media_pdf_01` | `prod_gwe_01` | **`S3`** (P2) | PDF | `GWE-Brochure-2026.pdf` | 4613734 | application/pdf | `products/gwe/docs/gwe-brochure.pdf` | `https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf` |
+| `media_gallery_01` | `prod_gwe_01` | **`DATABASE`** (P1) | IMAGE | `amsterdam-canals.jpg` | 1850000 | image/jpeg | *NULL* | `/api/v1/media/media_gallery_01/stream` |
+| `media_gallery_01` | `prod_gwe_01` | **`S3`** (P2) | IMAGE | `amsterdam-canals.jpg` | 1850000 | image/jpeg | `products/gwe/amsterdam-canals.jpg` | `https://cdn.hobiholidays.com/products/gwe/amsterdam-canals.jpg` |
 
 ### `product_media_blobs` Records (Active in Phase 1)
 
 | media_id | file_data | created_at |
 | :--- | :--- | :--- |
 | `media_hero_01` | `\xffd8ffe000104a464946...` *(binary bytes)* | `2026-09-04 10:00:00` |
-| `media_pdf_01`  | `\x255044462d312e340a...` *(PDF binary)* | `2026-09-04 10:05:00` |
+| `media_gallery_01` | `\xffd8ffe000104a464946...` *(binary bytes)* | `2026-09-04 10:02:00` |
 
 ### `product_media_usages` Records (Identical Across Both Phases)
 
 | id | media_id | target_type | target_id | usage_context | sort_order | UI Role |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `usg_001` | `media_hero_01` | `PRODUCT` | `prod_gwe_01` | `COVER` | 0 | Default Product Hero Banner |
-| `usg_002` | `media_pdf_01`  | `PRODUCT` | `prod_gwe_01` | `ITINERARY_PDF` | 0 | Downloadable Itinerary Brochure |
+| `usg_002` | `media_gallery_01` | `PRODUCT` | `prod_gwe_01` | `GALLERY` | 1 | Product Gallery Photo |
 
 ---
 
@@ -536,14 +510,7 @@ async function migrateMedia() {
         WHERE id = $3
       `, [objectKey, cdnUrl, media.id]);
 
-      // 4. Update denormalized column if this was an active itinerary PDF
-      await client.query(`
-        UPDATE products
-        SET itinerary_pdf_url = $1
-        WHERE id = $2 AND itinerary_pdf_url LIKE '%/api/v1/media/' || $3 || '/%'
-      `, [cdnUrl, media.product_id, media.id]);
-
-      // 5. Delete binary from blobs table to recover database disk space
+      // 4. Delete binary from blobs table to recover database disk space
       await client.query(`DELETE FROM product_media_blobs WHERE media_id = $1`, [media.id]);
 
       console.log(`Migrated: ${media.file_name} -> ${cdnUrl}`);

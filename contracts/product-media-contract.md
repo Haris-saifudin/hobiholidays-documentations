@@ -4,7 +4,7 @@
 > API contract specifications for the Product Media subsystem, supporting the **2-Phase Progressive Storage Strategy**:
 > - **Phase 1 (Database-First):** Multipart uploads to backend and direct streaming from PostgreSQL blobs.
 > - **Phase 2 (Cloud Storage & CDN):** Presigned S3/R2 upload URLs and edge CDN delivery.
-> - **Usage Management:** Polymorphic attachment to Products, Variants, and Itinerary items, ordered gallery reordering, and atomic 1:1 Itinerary PDF brochure assignment.
+> - **Usage Management:** Polymorphic attachment to Products, Variants, and Itinerary items, and ordered gallery reordering.
 >
 > **Related Design Document:** [Product Media Technical Design](../technical/product-media-technical-design.md)
 > **Backend Guide:** [Product Media Backend Guide](../backend/product-media-backend-guide.md)
@@ -18,13 +18,11 @@
 | :--- | :--- | :--- | :--- |
 | **Phase 1 (Database)** | `POST` | `/api/v1/products/:productId/media/upload` | Multipart file upload stored in PostgreSQL |
 | | `GET` | `/api/v1/media/:id/stream` | Stream binary image/video with HTTP caching |
-| | `GET` | `/api/v1/media/:id/download` | Download PDF brochure with attachment header |
 | **Phase 2 (Cloud)** | `POST` | `/api/v1/products/:productId/media/presigned-url` | Generate S3/R2 direct presigned upload URL |
 | | `POST` | `/api/v1/products/:productId/media` | Register uploaded cloud asset in database |
 | **Usages (Both Phases)**| `POST` | `/api/v1/products/:productId/media/usages` | Attach media to Product, Variant, or Itinerary Item |
 | | `PUT` | `/api/v1/products/:productId/media/usages/reorder`| Reorder gallery photos |
 | | `DELETE`| `/api/v1/products/:productId/media/usages/:usageId`| Detach media from usage slot |
-| **Itinerary Brochure** | `PUT` | `/api/v1/products/:productId/itinerary-pdf` | Atomically assign single official itinerary PDF |
 
 ---
 
@@ -37,7 +35,7 @@ Receives binary file upload via standard `multipart/form-data`. Saves metadata t
 - **Headers:** `Content-Type: multipart/form-data`
 - **Form Fields:**
   - `file`: Binary file buffer (max 25MB)
-  - `mediaType`: `'IMAGE' | 'VIDEO' | 'PDF'`
+  - `mediaType`: `'IMAGE' | 'VIDEO'`
 
 #### Success Response (201 Created)
 ```json
@@ -74,20 +72,6 @@ ETag: "550e8400-e29b-41d4-a716-446655440050-1785313920"
 
 ---
 
-### 1.3 PDF Brochure Download (`GET /api/v1/media/:id/download`)
-Streams PDF document with forced browser download prompt.
-
-#### Response Headers
-```http
-HTTP/1.1 200 OK
-Content-Type: application/pdf
-Content-Length: 4613734
-Content-Disposition: attachment; filename="Grand-West-Europe-Brochure-2026.pdf"
-Cache-Control: public, max-age=86400
-```
-
----
-
 ## 2. Phase 2: Cloud Object Storage Endpoints
 
 ### 2.1 Request Presigned Upload URL (`POST /api/v1/products/:productId/media/presigned-url`)
@@ -106,7 +90,6 @@ export class GeneratePresignedUrlDto {
     'image/png',
     'image/webp',
     'video/mp4',
-    'application/pdf',
   ])
   mimeType: string;
 
@@ -116,8 +99,8 @@ export class GeneratePresignedUrlDto {
   fileSizeBytes: number;
 
   @IsString()
-  @IsIn(['IMAGE', 'VIDEO', 'PDF'])
-  mediaType: 'IMAGE' | 'VIDEO' | 'PDF';
+  @IsIn(['IMAGE', 'VIDEO'])
+  mediaType: 'IMAGE' | 'VIDEO';
 }
 ```
 
@@ -146,8 +129,8 @@ import { IsString, IsIn, IsInt, IsUrl, IsOptional } from 'class-validator';
 
 export class CreateCloudMediaDto {
   @IsString()
-  @IsIn(['IMAGE', 'VIDEO', 'PDF'])
-  mediaType: 'IMAGE' | 'VIDEO' | 'PDF';
+  @IsIn(['IMAGE', 'VIDEO'])
+  mediaType: 'IMAGE' | 'VIDEO';
 
   @IsString()
   fileName: string;
@@ -192,8 +175,8 @@ export class AttachMediaUsageDto {
   targetId: string;
 
   @IsString()
-  @IsIn(['COVER', 'GALLERY', 'THUMBNAIL', 'ITINERARY_PDF', 'ATTACHMENT'])
-  usageContext: 'COVER' | 'GALLERY' | 'THUMBNAIL' | 'ITINERARY_PDF' | 'ATTACHMENT';
+  @IsIn(['COVER', 'GALLERY', 'THUMBNAIL', 'ATTACHMENT'])
+  usageContext: 'COVER' | 'GALLERY' | 'THUMBNAIL' | 'ATTACHMENT';
 
   @IsInt()
   @Min(0)
@@ -245,33 +228,18 @@ export class ReorderMediaUsagesDto {
 
 ---
 
-## 4. Official Itinerary PDF Brochure (`PUT /api/v1/products/:productId/itinerary-pdf`)
+## 4. Official Itinerary PDF Brochure Integration Note
 
-Guarantees atomic attachment of a single official downloadable brochure:
-1. Validates `media_type = 'PDF'`.
-2. Upserts `product_media_usages` with `usage_context = 'ITINERARY_PDF'` (guaranteed unique by `uq_media_usages_product_itinerary_pdf`).
-3. Updates `products.itinerary_pdf_url = media.url`.
+> **ATW External Brochure Architecture:** Official tour brochure PDFs are generated and hosted externally by **ATW**. Hobiholidays does **not** process, upload, or store PDF binaries in `product_media` or `product_media_blobs`.
+>
+> The `product_media` subsystem is strictly dedicated to marketing visual assets (`IMAGE` and `VIDEO`).
 
-#### Request DTO
-```typescript
-import { IsUUID } from 'class-validator';
+Instead, the tour brochure URL is managed directly on the product catalog entities:
+- **Product-Level Default (L1):** `products.itinerary_pdf_url` (updated via standard `PUT /api/v1/products/:id`)
+- **Variant-Level Override (L2):** `product_variants.itinerary_pdf_url` (updated via standard `PUT /api/v1/variants/:id`)
 
-export class SetItineraryPdfDto {
-  @IsUUID('4')
-  mediaId: string;
-}
+When querying a variant, the API resolves the brochure URL using SQL coalescing:
+```sql
+COALESCE(v.itinerary_pdf_url, p.itinerary_pdf_url) AS itinerary_pdf_url
 ```
 
-#### Success Response (200 OK)
-```json
-{
-  "statusCode": 200,
-  "message": "Official itinerary PDF brochure updated successfully",
-  "data": {
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
-    "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
-    "fileName": "GWE-Brochure-2026.pdf",
-    "fileSizeBytes": 4613734
-  }
-}
-```
