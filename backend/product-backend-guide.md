@@ -117,7 +117,6 @@ import {
   Param,
   Body,
   Query,
-  ParseUUIDPipe,
   HttpStatus,
   HttpCode,
 } from '@nestjs/common';
@@ -156,9 +155,9 @@ export class ProductController {
     };
   }
 
-  @Get(':id')
-  async getProduct(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.productService.findById(id);
+  @Get(':slug')
+  async getProduct(@Param('slug') slug: string) {
+    const data = await this.productService.findBySlug(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product retrieved successfully',
@@ -166,12 +165,12 @@ export class ProductController {
     };
   }
 
-  @Put(':id')
+  @Put(':slug')
   async updateProduct(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('slug') slug: string,
     @Body() dto: UpdateProductDto,
   ) {
-    const data = await this.productService.update(id, dto);
+    const data = await this.productService.update(slug, dto);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product updated successfully',
@@ -179,13 +178,13 @@ export class ProductController {
     };
   }
 
-  @Delete(':id')
-  async deleteProduct(@Param('id', ParseUUIDPipe) id: string) {
-    await this.productService.softDelete(id);
+  @Delete(':slug')
+  async deleteProduct(@Param('slug') slug: string) {
+    await this.productService.softDelete(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product deleted successfully',
-      data: { id, deleted: true },
+      data: { slug, deleted: true },
     };
   }
 
@@ -193,9 +192,9 @@ export class ProductController {
   // 2. SPLIT SUB-RESOURCE RETRIEVAL ENDPOINTS
   // =========================================================================
 
-  @Get(':id/media')
-  async getProductMedia(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.productService.getMedia(id);
+  @Get(':slug/media')
+  async getProductMedia(@Param('slug') slug: string) {
+    const data = await this.productService.getMedia(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product media retrieved successfully',
@@ -203,9 +202,9 @@ export class ProductController {
     };
   }
 
-  @Get(':id/locations')
-  async getProductLocations(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.productService.getLocations(id);
+  @Get(':slug/locations')
+  async getProductLocations(@Param('slug') slug: string) {
+    const data = await this.productService.getLocations(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product locations retrieved successfully',
@@ -213,9 +212,9 @@ export class ProductController {
     };
   }
 
-  @Get(':id/variants')
-  async getProductVariants(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.productService.getVariants(id);
+  @Get(':slug/variants')
+  async getProductVariants(@Param('slug') slug: string) {
+    const data = await this.productService.getVariants(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product variants retrieved successfully',
@@ -223,9 +222,9 @@ export class ProductController {
     };
   }
 
-  @Get(':id/supplementaries')
-  async getProductSupplementaries(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.productService.getSupplementaries(id);
+  @Get(':slug/supplementaries')
+  async getProductSupplementaries(@Param('slug') slug: string) {
+    const data = await this.productService.getSupplementaries(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product supplementaries retrieved successfully',
@@ -233,9 +232,9 @@ export class ProductController {
     };
   }
 
-  @Get(':id/seo')
-  async getProductSeo(@Param('id', ParseUUIDPipe) id: string) {
-    const data = await this.productService.getSeo(id);
+  @Get(':slug/seo')
+  async getProductSeo(@Param('slug') slug: string) {
+    const data = await this.productService.getSeo(slug);
     return {
       statusCode: HttpStatus.OK,
       message: 'Product SEO retrieved successfully',
@@ -367,6 +366,17 @@ export class ProductService {
     };
   }
 
+  async findBySlug(slug: string) {
+    const product = await this.productRepo.findOne({
+      where: { slug, deletedAt: null as any },
+      relations: ['journeys', 'category', 'parentCategory'],
+    });
+    if (!product) {
+      throw new NotFoundException(`Product with slug '${slug}' not found`);
+    }
+    return product;
+  }
+
   async findById(id: string) {
     const product = await this.productRepo.findOne({
       where: { id, deletedAt: null as any },
@@ -378,8 +388,14 @@ export class ProductService {
     return product;
   }
 
-  async softDelete(id: string) {
-    const product = await this.findById(id);
+  async update(slug: string, dto: UpdateProductDto) {
+    const product = await this.findBySlug(slug);
+    Object.assign(product, dto);
+    return this.productRepo.save(product);
+  }
+
+  async softDelete(slug: string) {
+    const product = await this.findBySlug(slug);
     product.deletedAt = new Date();
     product.listingStatus = 'ARCHIVED';
     return this.productRepo.save(product);
@@ -389,8 +405,8 @@ export class ProductService {
   // Sub-resource dedicated queries
   // =========================================================================
 
-  async getLocations(productId: string) {
-    await this.findById(productId);
+  async getLocations(productSlug: string) {
+    const product = await this.findBySlug(productSlug);
     const rows = await this.dataSource.query(`
       SELECT
         pl.id AS location_id,
@@ -411,7 +427,7 @@ export class ProductService {
       LEFT JOIN areas cont ON cont.id = sub.parent_id
       WHERE pl.product_id = $1
       ORDER BY pl.sort_order ASC
-    `, [productId]);
+    `, [product.id]);
 
     return rows.map((r: any) => ({
       locationId: r.location_id,
@@ -428,8 +444,8 @@ export class ProductService {
     }));
   }
 
-  async getVariants(productId: string) {
-    await this.findById(productId);
+  async getVariants(productSlug: string) {
+    const product = await this.findBySlug(productSlug);
     const rows = await this.dataSource.query(`
       SELECT
         v.id AS variant_id,
@@ -461,7 +477,7 @@ export class ProductService {
       LEFT JOIN product_journeys pj ON pj.product_id = v.product_id
       WHERE v.product_id = $1 AND v.deleted_at IS NULL
       ORDER BY v.created_at ASC
-    `, [productId]);
+    `, [product.id]);
 
     return rows.map((r: any) => ({
       variantId: r.variant_id,
@@ -475,6 +491,30 @@ export class ProductService {
       startingPrice: parseFloat(r.starting_price) || 0,
       activeTripsCount: parseInt(r.active_trips_count, 10) || 0,
     }));
+  }
+
+  async getMedia(productSlug: string) {
+    const product = await this.findBySlug(productSlug);
+    return {
+      productSlug: product.slug,
+      itineraryPdfUrl: product.itineraryPdfUrl,
+    };
+  }
+
+  async getSupplementaries(productSlug: string) {
+    const product = await this.findBySlug(productSlug);
+    return this.dataSource.query(
+      `SELECT * FROM product_supplementaries WHERE target_type = 'PRODUCT' AND target_id = $1 ORDER BY sort_order ASC`,
+      [product.id],
+    );
+  }
+
+  async getSeo(productSlug: string) {
+    const product = await this.findBySlug(productSlug);
+    return this.dataSource.query(
+      `SELECT * FROM seo_metadata WHERE target_type = 'PRODUCT' AND target_id = $1 LIMIT 1`,
+      [product.id],
+    );
   }
 }
 ```

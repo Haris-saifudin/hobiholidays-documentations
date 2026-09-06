@@ -16,22 +16,24 @@
 
 | Phase / Category | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
-| **Phase 1 (Database)** | `POST` | `/api/v1/products/:productId/media/upload` | Multipart file upload stored in PostgreSQL |
+| **Phase 1 (Database)** | `POST` | `/api/v1/products/:slug/media/upload` | Multipart file upload stored in PostgreSQL |
 | | `GET` | `/api/v1/media/:id/stream` | Stream binary image/video with HTTP caching |
-| **Phase 2 (Cloud)** | `POST` | `/api/v1/products/:productId/media/presigned-url` | Generate S3/R2 direct presigned upload URL |
-| | `POST` | `/api/v1/products/:productId/media` | Register uploaded cloud asset in database |
-| **Usages (Both Phases)**| `POST` | `/api/v1/products/:productId/media/usages` | Attach media to Product, Variant, or Itinerary Item |
-| | `PUT` | `/api/v1/products/:productId/media/usages/reorder`| Reorder gallery photos |
-| | `DELETE`| `/api/v1/products/:productId/media/usages/:usageId`| Detach media from usage slot |
+| **Phase 2 (Cloud)** | `POST` | `/api/v1/products/:slug/media/presigned-url` | Generate S3/R2 direct presigned upload URL |
+| | `POST` | `/api/v1/products/:slug/media` | Register uploaded cloud asset in database |
+| **Usages (Both Phases)**| `POST` | `/api/v1/products/:slug/media/usages` | Attach media to Product, Variant, or Itinerary Item |
+| | `PUT` | `/api/v1/products/:slug/media/usages/reorder`| Reorder gallery photos |
+| | `DELETE`| `/api/v1/products/:slug/media/usages/:usageId`| Detach media from usage slot |
 
 ---
 
 ## 1. Phase 1: Database-First Endpoints
 
-### 1.1 Multipart Upload (`POST /api/v1/products/:productId/media/upload`)
+### 1.1 Multipart Upload (`POST /api/v1/products/:slug/media/upload`)
 Receives binary file upload via standard `multipart/form-data`. Saves metadata to `product_media` and raw bytes to `product_media_blobs`.
 
 #### Request
+- **Path Parameters:**
+  - `slug`: Master product URL slug (e.g. `grand-west-europe`)
 - **Headers:** `Content-Type: multipart/form-data`
 - **Form Fields:**
   - `file`: Binary file buffer (max 25MB)
@@ -44,7 +46,7 @@ Receives binary file upload via standard `multipart/form-data`. Saves metadata t
   "message": "Media uploaded successfully to database",
   "data": {
     "id": "550e8400-e29b-41d4-a716-446655440050",
-    "productId": "550e8400-e29b-41d4-a716-446655440010",
+    "productSlug": "grand-west-europe",
     "storageProvider": "DATABASE",
     "mediaType": "IMAGE",
     "fileName": "gwe-hero-paris.jpg",
@@ -74,7 +76,7 @@ ETag: "550e8400-e29b-41d4-a716-446655440050-1785313920"
 
 ## 2. Phase 2: Cloud Object Storage Endpoints
 
-### 2.1 Request Presigned Upload URL (`POST /api/v1/products/:productId/media/presigned-url`)
+### 2.1 Request Presigned Upload URL (`POST /api/v1/products/:slug/media/presigned-url`)
 
 #### Request DTO
 ```typescript
@@ -110,9 +112,9 @@ export class GeneratePresignedUrlDto {
   "statusCode": 200,
   "message": "Presigned upload URL generated",
   "data": {
-    "uploadUrl": "https://hobiholidays-bucket.s3.ap-southeast-1.amazonaws.com/products/prod_gwe_01/media/eiffel-tower.jpg?X-Amz-Signature=...",
-    "objectKey": "products/prod_gwe_01/media/eiffel-tower.jpg",
-    "cdnUrl": "https://cdn.hobiholidays.com/products/prod_gwe_01/media/eiffel-tower.jpg",
+    "uploadUrl": "https://hobiholidays-bucket.s3.ap-southeast-1.amazonaws.com/products/grand-west-europe/media/eiffel-tower.jpg?X-Amz-Signature=...",
+    "objectKey": "products/grand-west-europe/media/eiffel-tower.jpg",
+    "cdnUrl": "https://cdn.hobiholidays.com/products/grand-west-europe/media/eiffel-tower.jpg",
     "expiresInSeconds": 900
   }
 }
@@ -120,7 +122,7 @@ export class GeneratePresignedUrlDto {
 
 ---
 
-### 2.2 Register Cloud Asset (`POST /api/v1/products/:productId/media`)
+### 2.2 Register Cloud Asset (`POST /api/v1/products/:slug/media`)
 Registers asset after browser finishes direct PUT upload to S3/R2.
 
 #### Request DTO
@@ -157,7 +159,7 @@ export class CreateCloudMediaDto {
 
 ## 3. Polymorphic Usage Endpoints (Both Phases)
 
-### 3.1 Attach Media Usage (`POST /api/v1/products/:productId/media/usages`)
+### 3.1 Attach Media Usage (`POST /api/v1/products/:slug/media/usages`)
 
 #### Request DTO
 ```typescript
@@ -202,7 +204,7 @@ export class AttachMediaUsageDto {
 
 ---
 
-### 3.2 Reorder Gallery Usages (`PUT /api/v1/products/:productId/media/usages/reorder`)
+### 3.2 Reorder Gallery Usages (`PUT /api/v1/products/:slug/media/usages/reorder`)
 
 #### Request DTO
 ```typescript
@@ -235,8 +237,8 @@ export class ReorderMediaUsagesDto {
 > The `product_media` subsystem is strictly dedicated to marketing visual assets (`IMAGE` and `VIDEO`).
 
 Instead, the tour brochure URL is managed directly on the product catalog entities:
-- **Product-Level Default (L1):** `products.itinerary_pdf_url` (updated via standard `PUT /api/v1/products/:id`)
-- **Variant-Level Override (L2):** `product_variants.itinerary_pdf_url` (updated via standard `PUT /api/v1/variants/:id`)
+- **Product-Level Default (L1):** `products.itinerary_pdf_url` (updated via standard `PUT /api/v1/products/:slug`)
+- **Variant-Level Override (L2):** `product_variants.itinerary_pdf_url` (updated via standard `PUT /api/v1/variants/:slug`)
 
 When querying a variant, the API resolves the brochure URL using SQL coalescing:
 ```sql

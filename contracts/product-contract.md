@@ -4,6 +4,7 @@
 > Complete REST API contract specifications for the Product Domain. In accordance with micro-frontend and clean REST standards, **Product retrieval is split into dedicated, granular sub-resource endpoints** (`/media`, `/locations`, `/variants`, `/supplementaries`, `/seo`) to eliminate payload bloat, support tabbed UI loading, and maximize edge cacheability.
 >
 > **Core Architectural Principles:**
+> - **Slug-Based Path Identification:** All master products (`/api/v1/products/:slug`) and bookable tour variants (`/api/v1/variants/:slug`) use indexed, human-readable natural slugs as their primary URL path parameters.
 > - **Category Taxonomy:** 2-tier parent-child category tree (`product_categories`) linked to Products.
 > - **Itinerary Hierarchy:** Owned at **Variant level (L2)** as default master itinerary, with optional override at **Trip level (L3)**.
 > - **Pricing & Add-on Architecture:** Base price is all-inclusive, scoped by age band (`ADULT`, `INFANT`) with dynamic `consumes_quota` boolean flag (infants may consume quota if seat is allocated). Excluded optional extras are modeled via `product_addons`.
@@ -25,28 +26,30 @@
 | | `POST` | `/api/v1/categories` | Create product category (parent or child) |
 | **Base Product (L1)** | `POST` | `/api/v1/products` | Create new master product + journey duration + category binding |
 | | `GET` | `/api/v1/products` | List all master products with pagination, category filter & status |
-| | `GET` | `/api/v1/products/:id` | **Base Product Details** (headline, category, duration, brochure URL) |
-| | `PUT` | `/api/v1/products/:id` | Update master product base info & category |
-| | `DELETE`| `/api/v1/products/:id` | Soft delete master product |
-| **Split Sub-Resources** | `GET` | `/api/v1/products/:id/media` | **Product Media** (covers, galleries, brochure) |
-| | `GET` | `/api/v1/products/:id/locations` | **Product Locations** (destination markers & 4-tier Area tree) |
-| | `GET` | `/api/v1/products/:id/variants` | **Product Variants** (L2 packages under this master product) |
-| | `GET` | `/api/v1/products/:id/supplementaries`| **Product Supplementary** (inclusions, exclusions, terms) |
-| | `GET` | `/api/v1/products/:id/seo` | **Product SEO Metadata** (custom meta title, description, OG) |
-| | `PUT` | `/api/v1/products/:id/seo` | Upsert product custom SEO metadata |
-| **Sub-Resource Mutations**| `POST` | `/api/v1/products/:id/locations` | Attach destination marker (4-tier Area) |
-| | `POST` | `/api/v1/products/:id/supplementaries`| Add supplementary block |
-| **L2 Variants** | `POST` | `/api/v1/products/:id/variants` | Create variant (Standard, Seasonal, Themed, etc.) |
-| | `GET` | `/api/v1/variants/:id` | Fetch specific variant details |
-| | `PUT` | `/api/v1/variants/:id` | Update variant title, slug, duration override |
-| **L2 Variant Itinerary** | `GET` | `/api/v1/variants/:variantId/itinerary` | Fetch default master itinerary for variant |
-| | `PUT` | `/api/v1/variants/:variantId/itinerary` | Upsert/replace default master itinerary for variant |
-| **L2 Variant Add-ons** | `GET` | `/api/v1/variants/:variantId/addons` | List optional add-ons configured for variant |
-| | `POST` | `/api/v1/variants/:variantId/addons` | Create optional add-on for variant |
+| | `GET` | `/api/v1/products/:slug` | **Base Product Details** (headline, category, duration, brochure URL) |
+| | `PUT` | `/api/v1/products/:slug` | Update master product base info & category |
+| | `DELETE`| `/api/v1/products/:slug` | Soft delete master product |
+| **Split Sub-Resources** | `GET` | `/api/v1/products/:slug/media` | **Product Media** (covers, galleries, brochure) |
+| | `GET` | `/api/v1/products/:slug/locations` | **Product Locations** (destination markers & 4-tier Area tree) |
+| | `GET` | `/api/v1/products/:slug/variants` | **Product Variants** (L2 packages under this master product) |
+| | `GET` | `/api/v1/products/:slug/supplementaries`| **Product Supplementary** (inclusions, exclusions, terms) |
+| | `GET` | `/api/v1/products/:slug/seo` | **Product SEO Metadata** (custom meta title, description, OG) |
+| | `PUT` | `/api/v1/products/:slug/seo` | Upsert product custom SEO metadata |
+| **Sub-Resource Mutations**| `POST` | `/api/v1/products/:slug/locations` | Attach destination marker (4-tier Area) |
+| | `POST` | `/api/v1/products/:slug/supplementaries`| Add supplementary block |
+| **L2 Variants** | `POST` | `/api/v1/products/:slug/variants` | Create variant under master product (Standard, Seasonal, Themed, etc.) |
+| | `GET` | `/api/v1/variants` | **All Tours Catalog Feed** (paginated list of variant cards) |
+| | `GET` | `/api/v1/variants/:slug` | Fetch specific variant details (PDP aggregated view) |
+| | `PUT` | `/api/v1/variants/:slug` | Update variant title, slug, duration override |
+| | `DELETE`| `/api/v1/variants/:slug` | Soft delete variant |
+| **L2 Variant Itinerary** | `GET` | `/api/v1/variants/:slug/itinerary` | Fetch default master itinerary for variant |
+| | `PUT` | `/api/v1/variants/:slug/itinerary` | Upsert/replace default master itinerary for variant |
+| **L2 Variant Add-ons** | `GET` | `/api/v1/variants/:slug/addons` | List optional add-ons configured for variant |
+| | `POST` | `/api/v1/variants/:slug/addons` | Create optional add-on for variant |
 | | `PUT` | `/api/v1/addons/:id` | Update add-on details |
 | | `DELETE`| `/api/v1/addons/:id` | Soft delete add-on |
-| **L3 Trips** | `GET` | `/api/v1/variants/:variantId/trips`| List trips (dated departures & quotas) |
-| | `POST` | `/api/v1/variants/:variantId/trips`| Create dated departure window |
+| **L3 Trips** | `GET` | `/api/v1/variants/:slug/trips`| List trips (dated departures & quotas under variant) |
+| | `POST` | `/api/v1/variants/:slug/trips`| Create dated departure window |
 | **L3 Trip Itinerary** | `GET` | `/api/v1/trips/:tripId/itinerary` | Fetch trip-specific itinerary override (if any) |
 | | `PUT` | `/api/v1/trips/:tripId/itinerary` | Upsert trip-specific itinerary override |
 | | `DELETE`| `/api/v1/trips/:tripId/itinerary` | Remove override (reverts to variant default) |
@@ -57,8 +60,8 @@
 | | `POST` | `/api/v1/badges` | Create promotional badge (Admin) |
 | | `PUT` | `/api/v1/badges/:id` | Update promotional badge (Admin) |
 | | `DELETE`| `/api/v1/badges/:id` | Soft delete/deactivate promotional badge (Admin) |
-| | `POST` | `/api/v1/variants/:id/badges` | Attach promotional badges to variant |
-| | `DELETE`| `/api/v1/variants/:id/badges/:badgeId` | Detach promotional badge from variant |
+| | `POST` | `/api/v1/variants/:slug/badges` | Attach promotional badges to variant |
+| | `DELETE`| `/api/v1/variants/:slug/badges/:badgeId` | Detach promotional badge from variant |
 
 ---
 
@@ -262,13 +265,126 @@ export class CreateProductDto {
     "createdAt": "2026-09-04T10:00:00.000Z"
   }
 }
+---
+
+### 2.3 Get Base Product by Slug (`GET /api/v1/products/:slug`)
+Fetches master product base details, journey duration, category taxonomy, and umbrella brochure URL.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product retrieved successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "code": "GWE-MASTER",
+    "name": "Grand West Europe",
+    "slug": "grand-west-europe",
+    "productType": "JOURNEY",
+    "listingStatus": "ACTIVE",
+    "category": {
+      "id": "550e8400-e29b-41d4-a716-446655440081",
+      "name": "Classic Series",
+      "slug": "classic-series"
+    },
+    "parentCategory": {
+      "id": "550e8400-e29b-41d4-a716-446655440080",
+      "name": "Tour Series",
+      "slug": "tour-series"
+    },
+    "durationDays": 11,
+    "durationNights": 9,
+    "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
+    "createdAt": "2026-09-04T08:00:00.000Z",
+    "updatedAt": "2026-09-04T09:30:00.000Z"
+  }
+}
+```
+
+---
+
+### 2.4 Update Master Product (`PUT /api/v1/products/:slug`)
+
+#### Request DTO (`UpdateProductDto`)
+```typescript
+import { IsString, IsOptional, IsIn, IsInt, Min, IsUUID } from 'class-validator';
+
+export class UpdateProductDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  @IsOptional()
+  @IsUUID('4')
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'])
+  productType?: 'JOURNEY' | 'OPEN_TRIP' | 'PRIVATE_TRIP' | 'DAY_TOUR';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'])
+  listingStatus?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  durationDays?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  durationNights?: number;
+
+  @IsOptional()
+  @IsString()
+  itineraryPdfUrl?: string;
+}
+```
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product updated successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440010",
+    "code": "GWE-MASTER",
+    "name": "Grand West Europe Signature",
+    "slug": "grand-west-europe",
+    "listingStatus": "ACTIVE",
+    "updatedAt": "2026-09-05T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 2.5 Soft Delete Master Product (`DELETE /api/v1/products/:slug`)
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product deleted successfully",
+  "data": {
+    "slug": "grand-west-europe",
+    "deleted": true
+  }
+}
 ```
 
 ---
 
 ## 3. Split Sub-Resource Endpoints
 
-### 3.1 Get Product Locations (`GET /api/v1/products/:id/locations`)
+### 3.1 Get Product Locations (`GET /api/v1/products/:slug/locations`)
 Returns destination markers linked to the 4-tier Area domain (**Continent → Sub Continent → Country → POI**).
 
 #### Success Response (200 OK)
@@ -293,11 +409,152 @@ Returns destination markers linked to the 4-tier Area domain (**Continent → Su
 }
 ```
 
+### 3.2 Attach Product Location Marker (`POST /api/v1/products/:slug/locations`)
+
+#### Request DTO (`AttachProductLocationDto`)
+```typescript
+import { IsUUID, IsOptional, IsInt, Min, IsNumber } from 'class-validator';
+
+export class AttachProductLocationDto {
+  @IsUUID('4')
+  areaId: string; // POI or Country Area UUID
+
+  @IsOptional()
+  @IsNumber()
+  lat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  lng?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number = 0;
+}
+```
+
+#### Success Response (201 Created)
+```json
+{
+  "statusCode": 201,
+  "message": "Product location marker attached successfully",
+  "data": {
+    "locationId": "550e8400-e29b-41d4-a716-446655440082",
+    "productSlug": "grand-west-europe",
+    "areaId": "550e8400-e29b-41d4-a716-446655440011",
+    "poi": "Eiffel Tower",
+    "sortOrder": 2
+  }
+}
+```
+
+---
+
+### 3.3 Get Product Media (`GET /api/v1/products/:slug/media`)
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product media retrieved successfully",
+  "data": {
+    "cover": {
+      "id": "550e8400-e29b-41d4-a716-446655440050",
+      "url": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",
+      "altText": "Grand West Europe Hero Paris"
+    },
+    "gallery": [
+      {
+        "usageId": "550e8400-e29b-41d4-a716-446655440061",
+        "url": "https://cdn.hobiholidays.com/products/gwe/amsterdam-canals.jpg",
+        "sortOrder": 1
+      },
+      {
+        "usageId": "550e8400-e29b-41d4-a716-446655440062",
+        "url": "https://cdn.hobiholidays.com/products/gwe/brussels-atomium.jpg",
+        "sortOrder": 2
+      }
+    ],
+    "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf"
+  }
+}
+```
+
+---
+
+### 3.4 Get Product Variants (`GET /api/v1/products/:slug/variants`)
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product variants retrieved successfully",
+  "data": [
+    {
+      "variantId": "550e8400-e29b-41d4-a716-446655440020",
+      "code": "GWE-SPR-2026",
+      "name": "GWE Spring 2026",
+      "slug": "gwe-spring-2026",
+      "variantType": "SEASONAL",
+      "listingStatus": "ACTIVE",
+      "durationDays": 11,
+      "durationNights": 9,
+      "startingPrice": 28000000.00,
+      "currency": "IDR"
+    }
+  ]
+}
+```
+
+---
+
+### 3.5 Get Product Supplementary Content (`GET /api/v1/products/:slug/supplementaries`)
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product supplementaries retrieved successfully",
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440071",
+      "category": "INCLUDED",
+      "title": "Tiket Pesawat & Bagasi",
+      "content": "Tiket pesawat kelas ekonomi internasional pulang-pergi dengan bagasi 25 kg.",
+      "sortOrder": 1
+    }
+  ]
+}
+```
+
+---
+
+### 3.6 Get Product SEO Metadata (`GET /api/v1/products/:slug/seo`)
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Product SEO metadata retrieved successfully",
+  "data": {
+    "targetSlug": "grand-west-europe",
+    "targetType": "PRODUCT",
+    "metaTitle": "Paket Tour Grand West Europe (GWE) Terbaik | Hobiholidays",
+    "metaDescription": "Jelajahi Eropa Barat bersama Hobiholidays.",
+    "canonicalUrl": "https://www.hobiholidays.com/tours/grand-west-europe",
+    "ogImageUrl": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",
+    "noIndex": false,
+    "noFollow": false
+  }
+}
+```
+
 ---
 
 ## 4. L2 Variant Endpoints & Master Itinerary
 
-### 4.1 Create Variant (`POST /api/v1/products/:id/variants`)
+### 4.1 Create Variant (`POST /api/v1/products/:slug/variants`)
 ```typescript
 import { IsString, IsIn, IsInt, Min, IsOptional } from 'class-validator';
 
@@ -333,7 +590,7 @@ export class CreateVariantDto {
 
 ---
 
-### 4.2 Get Variant Master Itinerary (`GET /api/v1/variants/:variantId/itinerary`)
+### 4.2 Get Variant Master Itinerary (`GET /api/v1/variants/:slug/itinerary`)
 Returns the default master day-by-day itinerary defined for this variant.
 
 #### Success Response (200 OK)
@@ -343,7 +600,7 @@ Returns the default master day-by-day itinerary defined for this variant.
   "message": "Variant default itinerary retrieved successfully",
   "data": {
     "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
-    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "variantSlug": "gwe-spring-2026",
     "tripId": null,
     "title": "GWE Spring Master Itinerary 11D",
     "daysCount": 11,
@@ -388,7 +645,7 @@ Returns the default master day-by-day itinerary defined for this variant.
 
 ---
 
-### 4.3 Upsert Variant Master Itinerary (`PUT /api/v1/variants/:variantId/itinerary`)
+### 4.3 Upsert Variant Master Itinerary (`PUT /api/v1/variants/:slug/itinerary`)
 
 #### Request DTO (`UpsertItineraryDto`)
 ```typescript
@@ -452,7 +709,7 @@ export class UpsertItineraryDto {
 
 ## 5. L2 Variant Add-on Subsystem
 
-### 5.1 List Variant Add-ons (`GET /api/v1/variants/:variantId/addons`)
+### 5.1 List Variant Add-ons (`GET /api/v1/variants/:slug/addons`)
 Returns all optional or required add-ons available for selection on this variant.
 
 #### Success Response (200 OK)
@@ -463,7 +720,7 @@ Returns all optional or required add-ons available for selection on this variant
   "data": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440070",
-      "variantId": "550e8400-e29b-41d4-a716-446655440020",
+      "variantSlug": "gwe-spring-2026",
       "code": "ADDON-VISA-FAST",
       "name": "Schengen Visa Fast Track",
       "description": "Priority appointment and consular processing assistance",
@@ -477,7 +734,7 @@ Returns all optional or required add-ons available for selection on this variant
     },
     {
       "id": "550e8400-e29b-41d4-a716-446655440071",
-      "variantId": "550e8400-e29b-41d4-a716-446655440020",
+      "variantSlug": "gwe-spring-2026",
       "code": "ADDON-EIFFEL-SUMMIT",
       "name": "Eiffel Tower Summit Access",
       "description": "Skip-the-line elevator ticket to top observation deck",
@@ -495,7 +752,7 @@ Returns all optional or required add-ons available for selection on this variant
 
 ---
 
-### 5.2 Create Variant Add-on (`POST /api/v1/variants/:variantId/addons`)
+### 5.2 Create Variant Add-on (`POST /api/v1/variants/:slug/addons`)
 
 #### Request DTO (`CreateAddonDto`)
 ```typescript
@@ -546,9 +803,77 @@ export class CreateAddonDto {
 
 ---
 
-## 6. L3 Trip Itinerary & Effective Resolution
+## 6. L3 Trip Departures, Itinerary & Effective Resolution
 
-### 6.1 Get Effective Itinerary (`GET /api/v1/trips/:tripId/effective-itinerary`)
+### 6.1 List Variant Trips (`GET /api/v1/variants/:slug/trips`)
+Returns all scheduled departure date windows and real-time quotas under this variant.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Variant departure trips retrieved successfully",
+  "data": [
+    {
+      "tripId": "550e8400-e29b-41d4-a716-446655440031",
+      "variantSlug": "gwe-spring-2026",
+      "startDate": "2026-04-10",
+      "endDate": "2026-04-20",
+      "minQuota": 1,
+      "maxQuota": 25,
+      "availableSeats": 8,
+      "status": "ACTIVE",
+      "hasTripItineraryOverride": false
+    },
+    {
+      "tripId": "550e8400-e29b-41d4-a716-446655440032",
+      "variantSlug": "gwe-spring-2026",
+      "startDate": "2026-04-24",
+      "endDate": "2026-05-04",
+      "minQuota": 1,
+      "maxQuota": 25,
+      "availableSeats": 14,
+      "status": "ACTIVE",
+      "hasTripItineraryOverride": false
+    }
+  ]
+}
+```
+
+---
+
+### 6.2 Create Variant Trip (`POST /api/v1/variants/:slug/trips`)
+
+#### Request DTO (`CreateTripDto`)
+```typescript
+import { IsDateString, IsInt, Min, IsOptional, IsString, IsIn } from 'class-validator';
+
+export class CreateTripDto {
+  @IsDateString()
+  startDate: string; // YYYY-MM-DD
+
+  @IsDateString()
+  endDate: string; // YYYY-MM-DD
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  minQuota?: number = 1;
+
+  @IsInt()
+  @Min(1)
+  maxQuota: number; // e.g. 25
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'])
+  status?: string = 'ACTIVE';
+}
+```
+
+---
+
+### 6.3 Get Effective Itinerary (`GET /api/v1/trips/:tripId/effective-itinerary`)
 Resolves itinerary following the priority rule: returns **Trip-specific override** if present; otherwise falls back to **Variant default master itinerary**.
 
 #### Success Response (200 OK - Fallback to Variant Default)
@@ -559,7 +884,7 @@ Resolves itinerary following the priority rule: returns **Trip-specific override
   "data": {
     "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
     "tripId": "550e8400-e29b-41d4-a716-446655440031",
-    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "variantSlug": "gwe-spring-2026",
     "isOverride": false,
     "title": "GWE Spring Master Itinerary 11D",
     "daysCount": 11,
@@ -584,7 +909,7 @@ Resolves itinerary following the priority rule: returns **Trip-specific override
   "data": {
     "itineraryId": "550e8400-e29b-41d4-a716-446655440079",
     "tripId": "550e8400-e29b-41d4-a716-446655440031",
-    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "variantSlug": "gwe-spring-2026",
     "isOverride": true,
     "title": "GWE Spring 11D - Keukenhof Peak Special (Trip Override)",
     "daysCount": 11,
@@ -638,27 +963,6 @@ Returns pricing tiers for each traveler age band (`ADULT`, `INFANT`) along with 
           "amount": 8000000.00,
           "isIncluded": true,
           "description": "9 nights twin-sharing in 4-star hotels"
-        },
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440053",
-          "name": "Private Coach & Transfers",
-          "amount": 3500000.00,
-          "isIncluded": true,
-          "description": "Air-conditioned private touring motorcoach"
-        },
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440054",
-          "name": "Tour Leader & Local Guides",
-          "amount": 1500000.00,
-          "isIncluded": true,
-          "description": "Professional Indonesian tour leader"
-        },
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440055",
-          "name": "Keukenhof & Attraction Admissions",
-          "amount": 1000000.00,
-          "isIncluded": true,
-          "description": "Fast-track entrance tickets"
         }
       ]
     },
@@ -875,24 +1179,7 @@ export class CreateBadgeDto {
 }
 ```
 
-#### Success Response (201 Created)
-```json
-{
-  "statusCode": 201,
-  "message": "Badge created successfully",
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440092",
-    "code": "EARLY_BIRD",
-    "label": "⚡ Early Bird",
-    "backgroundColor": "#FEFCE8",
-    "textColor": "#854D0E",
-    "iconUrl": null,
-    "isActive": true
-  }
-}
-```
-
-### 8.3 Assign Badges to Variant (`POST /api/v1/variants/:id/badges`)
+### 8.3 Assign Badges to Variant (`POST /api/v1/variants/:slug/badges`)
 
 #### Request DTO (`AssignVariantBadgesDto`)
 ```typescript
@@ -911,7 +1198,7 @@ export class AssignVariantBadgesDto {
   "statusCode": 200,
   "message": "Badges assigned to variant successfully",
   "data": {
-    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "variantSlug": "gwe-spring-2026",
     "badges": [
       {
         "id": "550e8400-e29b-41d4-a716-446655440090",
@@ -932,7 +1219,7 @@ export class AssignVariantBadgesDto {
 }
 ```
 
-### 8.4 Detach Badge from Variant (`DELETE /api/v1/variants/:id/badges/:badgeId`)
+### 8.4 Detach Badge from Variant (`DELETE /api/v1/variants/:slug/badges/:badgeId`)
 
 #### Success Response (200 OK)
 ```json
@@ -940,7 +1227,7 @@ export class AssignVariantBadgesDto {
   "statusCode": 200,
   "message": "Badge detached from variant successfully",
   "data": {
-    "variantId": "550e8400-e29b-41d4-a716-446655440020",
+    "variantSlug": "gwe-spring-2026",
     "detachedBadgeId": "550e8400-e29b-41d4-a716-446655440090"
   }
 }

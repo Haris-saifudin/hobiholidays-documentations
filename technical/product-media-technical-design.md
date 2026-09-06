@@ -210,7 +210,7 @@ erDiagram
 
 ### Phase 1: Database-First Endpoints
 
-#### 1. Multipart Upload Endpoint (`POST /api/v1/products/:productId/media/upload`)
+#### 1. Multipart Upload Endpoint (`POST /api/v1/products/:slug/media/upload`)
 Receives binary file upload via standard `multipart/form-data`, saves metadata to `product_media`, and binary bytes to `product_media_blobs`.
 
 ```typescript
@@ -222,13 +222,12 @@ import {
   UseInterceptors,
   UploadedFile,
   Body,
-  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadMediaDto } from './dto/upload-media.dto';
 import { ProductMediaService } from './product-media.service';
 
-@Controller('api/v1/products/:productId/media')
+@Controller('api/v1/products/:slug/media')
 export class ProductMediaController {
   constructor(private readonly mediaService: ProductMediaService) {}
 
@@ -239,11 +238,11 @@ export class ProductMediaController {
     }),
   )
   async uploadMedia(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('slug') slug: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadMediaDto,
   ) {
-    return this.mediaService.saveToDatabase(productId, file, dto.mediaType);
+    return this.mediaService.saveToDatabase(slug, file, dto.mediaType);
   }
 }
 ```
@@ -263,7 +262,7 @@ export class UploadMediaDto {
 ```json
 {
   "id": "550e8400-e29b-41d4-a716-446655440050",
-  "productId": "550e8400-e29b-41d4-a716-446655440010",
+  "productSlug": "grand-west-europe",
   "storageProvider": "DATABASE",
   "mediaType": "IMAGE",
   "fileName": "gwe-hero-paris.jpg",
@@ -313,16 +312,16 @@ export class MediaStreamController {
 
 When upgrading to Phase 2, two new endpoints are introduced for direct presigned uploads, while streaming automatically pivots to the CDN:
 
-1. **`POST /api/v1/products/:productId/media/presigned-url`**
+1. **`POST /api/v1/products/:slug/media/presigned-url`**
    - Returns temporary S3/R2 presigned upload URL.
-2. **`POST /api/v1/products/:productId/media`**
+2. **`POST /api/v1/products/:slug/media`**
    - Registers cloud asset in `product_media` with `storage_provider = 'S3'`, `object_key`, and `url = 'https://cdn.hobiholidays.com/...'`.
 
 ---
 
 ### Common Endpoints (Both Phases)
 
-#### 1. Assign Polymorphic Media Usage (`POST /api/v1/products/:productId/media/usages`)
+#### 1. Assign Polymorphic Media Usage (`POST /api/v1/products/:slug/media/usages`)
 Works identically in both Phase 1 and Phase 2:
 
 ```typescript

@@ -51,7 +51,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ProductMediaService } from '../services/product-media.service';
 import { UploadMediaDto } from '../dto/upload-media.dto';
 
-@Controller('products/:productId/media')
+@Controller('products/:slug/media')
 export class ProductMediaController {
   constructor(private readonly mediaService: ProductMediaService) {}
 
@@ -72,7 +72,7 @@ export class ProductMediaController {
     }),
   )
   async uploadMedia(
-    @Param('productId', ParseUUIDPipe) productId: string,
+    @Param('slug') slug: string,
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadMediaDto,
   ) {
@@ -80,7 +80,7 @@ export class ProductMediaController {
       throw new BadRequestException('File is required');
     }
 
-    const media = await this.mediaService.saveBinaryFile(productId, file, dto.mediaType);
+    const media = await this.mediaService.saveBinaryFile(slug, file, dto.mediaType);
 
     return {
       statusCode: HttpStatus.CREATED,
@@ -279,12 +279,12 @@ export class S3StorageService {
   }
 
   async generatePresignedUploadUrl(
-    productId: string,
+    productSlug: string,
     fileName: string,
     mimeType: string,
   ) {
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const objectKey = `products/${productId}/${Date.now()}-${sanitizedName}`;
+    const objectKey = `products/${productSlug}/${Date.now()}-${sanitizedName}`;
 
     const command = new PutObjectCommand({
       Bucket: this.bucketName,
