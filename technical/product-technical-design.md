@@ -310,20 +310,6 @@ CREATE TABLE product_trip_pricings (
 );
 CREATE INDEX idx_pricings_search ON product_trip_pricings(trip_id, age_band, selling_price);
 
--- Itemized breakdown components per pricing tier (e.g. Flight, Hotel, Coach, Visa, Admissions)
-CREATE TABLE product_pricing_components (
-    id              UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
-    pricing_id      UUID           NOT NULL REFERENCES product_trip_pricings(id) ON DELETE CASCADE,
-    name            VARCHAR(150)   NOT NULL, -- e.g. "International Flight & Taxes", "4-Star Hotel Accommodation"
-    description     TEXT           NULL,     -- e.g. "Economy return flight with Qatar Airways"
-    amount          DECIMAL(15,2)  NULL,     -- Nominal cost estimation for transparent breakdowns
-    is_included     BOOLEAN        NOT NULL DEFAULT TRUE,
-    sort_order      INT            NOT NULL DEFAULT 0,
-    created_at      TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX idx_pricing_components_pricing_id ON product_pricing_components(pricing_id);
-
 -- Optional add-ons (Single Supplement, Extra Baggage, Flight Upgrade, Excursion)
 -- Excluded from base price; available for elective passenger purchase
 CREATE TABLE product_addons (
@@ -627,7 +613,6 @@ erDiagram
     products              ||--o{ product_variants          : "product_id"
     product_variants      ||--o{ product_trips             : "variant_id"
     product_trips         ||--o{ product_trip_pricings      : "trip_id"
-    product_trip_pricings ||--o{ product_pricing_components: "pricing_id"
     product_variants      ||--o{ product_addons            : "variant_id (optional extras)"
     product_variants      ||--o{ product_variant_badges    : "variant_id"
     product_badges        ||--o{ product_variant_badges    : "badge_id"
@@ -671,14 +656,6 @@ erDiagram
         boolean    consumes_quota "true | false (infant may use quota)"
         decimal    base_price
         decimal    selling_price
-    }
-
-    product_pricing_components {
-        uuid       id             PK
-        uuid       pricing_id     FK
-        varchar    name           "Flight, Hotel, Coach, Visa"
-        decimal    amount
-        boolean    is_included
     }
 
     product_addons {
