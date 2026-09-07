@@ -418,8 +418,6 @@ export class ProductService {
         country_area.code AS country_code,
         subcont_area.name AS sub_continent,
         continent_area.name AS continent,
-        pl.lat,
-        pl.lng,
         pl.address,
         pl.sort_order
       FROM product_locations pl
@@ -456,8 +454,6 @@ export class ProductService {
       countryCode: r.country_code,
       subContinent: r.sub_continent,
       continent: r.continent,
-      lat: r.lat ? parseFloat(r.lat) : null,
-      lng: r.lng ? parseFloat(r.lng) : null,
       address: r.address,
       sortOrder: r.sort_order,
     }));
@@ -580,7 +576,7 @@ export class ProductTripPricing {
   @Column({ length: 10, default: 'IDR' })
   currency: string;
 
-  @OneToMany(() => ProductPricingComponent, (c) => c.pricing, { cascade: true })
+  @OneToMany(() => ProductPricingComponent, (c) => c.pricing)
   components: ProductPricingComponent[];
 
   @CreateDateColumn({ name: 'created_at' })
@@ -604,7 +600,7 @@ export class ProductPricingComponent {
   @Column({ name: 'pricing_id', type: 'uuid' })
   pricingId: string;
 
-  @ManyToOne(() => ProductTripPricing, (pricing) => pricing.components, { onDelete: 'CASCADE' })
+  @ManyToOne(() => ProductTripPricing, (pricing) => pricing.components, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'pricing_id' })
   pricing: ProductTripPricing;
 

@@ -35,7 +35,7 @@ hobiholidays-documentations/
 │   ├── README.md                          # NestJS architecture, module graph, filters, interceptors
 │   ├── product-backend-guide.md           # ProductModule, split sub-resource service architecture
 │   ├── product-hierarchy-backend-guide.md # Duration inheritance COALESCE, nominal seat availability
-│   ├── area-backend-guide.md              # Recursive CTE traversal query, WGS-84 coordinates, cache
+│   ├── area-backend-guide.md              # Hierarchical tree assembly, pure relational traversal, cache
 │   ├── product-search-filter-backend-guide.md # Dynamic SQL builder, trigram search, offset pagination
 │   ├── product-media-backend-guide.md     # Multer BYTEA streaming controller, S3 migration script
 │   └── seo-backend-guide.md               # Dynamic fallback resolver service, JSON-LD generator
@@ -76,7 +76,7 @@ The platform engineering lifecycle is organized into structured development phas
 The documentation in this repository currently defines the complete, authoritative specification for **Phase 1**:
 - **Product Core & Master Catalog:** Master brand umbrella (`products`), 2-tier Category taxonomy, journey durations, destination markers, and supplementary inclusions. Catalog synchronization from ATW is non-destructive and idempotent, governed by `listing_status` (`'ACTIVE'`, `'INACTIVE'`, `'ARCHIVED'`) and `deleted_at` timestamps without hard cascading drops (`DELETE CASCADE`).
 - **Product Hierarchy & Nominal Availability:** 3-Level hierarchy (`Product → Variant → Trip → Pricing`), duration inheritance (`COALESCE`), nominal read-only seat availability ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$), relational promotional badges (`product_badges`), and itemized cost breakdown components (`product_pricing_components`). Transactional pessimistic locking (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are strictly decoupled and delegated downstream to Phase 3.
-- **Area & Geography (Decoupled PostGIS):** 4-Tier geographic taxonomy (`Continent → Sub Continent → Country → POI`), standard WGS-84 float coordinates (`lat`, `lng` as `DOUBLE PRECISION`), pure relational B-Tree indexing on `(parent_id, area_type_id, slug)`, flexible flat anchoring (POI, Country, Sub-Continent, Continent), dynamic upward `CASE` hierarchy traversal, and "Where To?" autocomplete. Standard extensions only (`"uuid-ossp"`, `"pg_trgm"`).
+- **Area & Geography (Decoupled PostGIS):** 4-Tier geographic taxonomy (`Continent → Sub Continent → Country → POI`), pure relational B-Tree indexing on `(parent_id, area_type_id, slug)`, flexible flat anchoring (POI, Country, Sub-Continent, Continent), dynamic upward `CASE` hierarchy traversal, and "Where To?" autocomplete. Standard extensions only (`"uuid-ossp"`, `"pg_trgm"`).
 - **Search & Dynamic Discovery:** Dynamic upward Area traversal, Trigram fuzzy matching (`pg_trgm`), windowed total counts (`COUNT(*) OVER()`), and dynamic active-only filter options aggregation (`/api/v1/variants/search/filter-options`).
 - **Media Subsystem:** 2-Phase progressive storage (Database BYTEA binary blobs for zero-dependency local dev vs Cloud AWS S3/Cloudflare R2 presigned URLs). Official tour brochure PDFs are generated externally by ATW and referenced directly via `itinerary_pdf_url`.
 - **SEO & Rich Snippets:** Polymorphic SEO schema (`seo_metadata`), programmatic dynamic fallbacks, Google Rich Results (Schema.org `TouristTrip` & `Offer`), dynamic sitemaps, and robots.txt.

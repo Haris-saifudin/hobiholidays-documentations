@@ -82,7 +82,7 @@ Storing binary files (`BYTEA`) directly in the main `product_media` table would 
 -- =========================================================================
 CREATE TABLE product_media (
     id               UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id       UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id       UUID         NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     storage_provider VARCHAR(50)  NOT NULL DEFAULT 'DATABASE', -- DATABASE (Phase 1) | S3 | CLOUDFLARE_R2 (Phase 2)
     source_upload_id VARCHAR(255),                          -- External upload service or CDN reference ID
     media_type       VARCHAR(50)  NOT NULL,                  -- IMAGE | VIDEO
@@ -107,7 +107,7 @@ CREATE INDEX idx_media_storage    ON product_media(storage_provider);
 -- Dedicated table for raw binary data during Phase 1.
 -- =========================================================================
 CREATE TABLE product_media_blobs (
-    media_id   UUID      PRIMARY KEY REFERENCES product_media(id) ON DELETE CASCADE,
+    media_id   UUID      PRIMARY KEY REFERENCES product_media(id) ON DELETE RESTRICT,
     file_data  BYTEA     NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -118,7 +118,7 @@ CREATE TABLE product_media_blobs (
 -- =========================================================================
 CREATE TABLE product_media_usages (
     id            UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-    media_id      UUID        NOT NULL REFERENCES product_media(id) ON DELETE CASCADE,
+    media_id      UUID        NOT NULL REFERENCES product_media(id) ON DELETE RESTRICT,
     target_type   VARCHAR(50) NOT NULL,    -- PRODUCT | VARIANT | ITINERARY_ITEM
     target_id     UUID        NOT NULL,    -- Polymorphic UUID — resolved by target_type
     usage_context VARCHAR(50) NOT NULL,    -- COVER | GALLERY | THUMBNAIL | ATTACHMENT

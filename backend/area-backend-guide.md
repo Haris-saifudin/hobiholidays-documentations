@@ -1,7 +1,7 @@
 # Area Domain — NestJS Backend Implementation Guide
 
 > **Pillar 3: NestJS Backend Implementation**
-> Backend engineering guide for the Area Domain subsystem, managing the **4-tier Geographic Hierarchy** (`Continent → Sub Continent → Country → POI`). Covers hierarchical tree assembly, standard WGS-84 coordinate mapping, autocomplete discovery, and in-memory reference caching.
+> Backend engineering guide for the Area Domain subsystem, managing the **4-tier Geographic Hierarchy** (`Continent → Sub Continent → Country → POI`). Covers hierarchical tree assembly, pure relational tree traversal, autocomplete discovery, flexible flat anchoring, and in-memory reference caching.
 >
 > **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)  
 > **API Contract:** [Area Contracts](../contracts/area-contract.md)  
@@ -57,7 +57,7 @@ export class AreaService {
 
     // Fetch all 4 tiers in a single indexed query
     const areas = await this.dataSource.query(`
-      SELECT a.id, a.parent_id, a.name, a.slug, at.name AS area_type, a.code, a.lat, a.lng, a.sort_order
+      SELECT a.id, a.parent_id, a.name, a.slug, at.name AS area_type, a.code, a.sort_order
       FROM areas a
       INNER JOIN area_types at ON at.id = a.area_type_id
       WHERE a.deleted_at IS NULL
@@ -127,8 +127,6 @@ export class AreaService {
         a.name,
         a.slug,
         at.name AS area_type,
-        a.lat,
-        a.lng,
         p.name AS parent_name,
         p.slug AS parent_slug,
         gp.name AS grandparent_name,

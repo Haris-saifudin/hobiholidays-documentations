@@ -13,7 +13,7 @@
 | [Product Hierarchy](./product-hierarchy-technical-design.md)   | 3-level hierarchy mental model, full-domain ERD, hierarchy sample data (GWE) |
 | [Product Media](./product-media-technical-design.md)           | Media asset repository, polymorphic usages, presigned uploads, CDN delivery  |
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL query, indexing strategy                            |
-| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), standard coordinate model|
+| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), pure relational model |
 | [SEO Architecture](./seo-technical-design.md)                  | SEO metadata, Schema.org rich snippets, Next.js dynamic metadata             |
 | [API Contracts](../contracts/README.md)                         | Complete REST API contracts, split sub-resources, request/response DTOs      |
 | [Backend Guide](../backend/product-backend-guide.md)            | NestJS ProductModule, services, transactions, and split endpoints             |
@@ -51,9 +51,9 @@ Media usages and supplementary content use `(target_type, target_id)` to target 
 - **State Machine & Soft Deletion:** Entities are governed by `listing_status` (`'ACTIVE'`, `'INACTIVE'`, `'ARCHIVED'`) and soft-delete timestamps (`deleted_at TIMESTAMP NULL`).
 - **Cascade Independence:** Archiving or deactivating a master product (`listing_status = 'ARCHIVED'`) automatically excludes child variants and trips from public search feeds without requiring destructive database drops (`DELETE CASCADE`).
 
-### 6. Standard Coordinates & Decoupled Spatial Geometry (WGS-84)
+### 6. Decoupled PostGIS & Pure Relational Geography
 
-The platform eliminates all PostGIS extensions, spatial geometry types (`GEOMETRY`), GiST indexes, and spatial query operators (`ST_Contains`, `ST_Within`). Coordinates are modeled as standard float columns (`lat DOUBLE PRECISION`, `lng DOUBLE PRECISION`) on `product_locations` and `areas`. Relational hierarchy traversal relies on standard B-Tree indexing. Only `"uuid-ossp"` and `"pg_trgm"` are retained.
+The platform eliminates all PostGIS extensions, spatial geometry types (`GEOMETRY`), GiST indexes, and spatial query operators (`ST_Contains`, `ST_Within`). Geographic hierarchy traversal relies on standard B-Tree indexing on `(parent_id, area_type_id, slug)` and trigram matching. Only `"uuid-ossp"` and `"pg_trgm"` are retained.
 
 ### 7. Precision Economics
 
@@ -213,7 +213,7 @@ CREATE INDEX idx_products_slug_trgm       ON products USING GIN (slug gin_trgm_o
 
 -- Base journey metadata (1:1 with products)
 CREATE TABLE product_journeys (
-    product_id          UUID        PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+    product_id          UUID        PRIMARY KEY REFERENCES products(id) ON DELETE RESTRICT,
     duration_days       INT         NOT NULL DEFAULT 1,
     duration_nights     INT         NOT NULL DEFAULT 0,
     created_at          TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -229,7 +229,7 @@ CREATE TABLE product_journeys (
 -- =========================================================================
 CREATE TABLE product_variants (
     id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id      UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id      UUID         NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     variant_type    VARCHAR(50)  NOT NULL DEFAULT 'STANDARD', -- STANDARD | SEASONAL | THEMED | PROMOTIONAL
     name            VARCHAR(255) NOT NULL,                    -- e.g. "GWE Spring 2026"
     slug            VARCHAR(255) UNIQUE NOT NULL,              -- e.g. "gwe-spring-2026"
@@ -270,8 +270,8 @@ CREATE TABLE product_badges (
 
 -- Flat M:N mapping between variants and badges
 CREATE TABLE product_variant_badges (
-    variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
-    badge_id   UUID NOT NULL REFERENCES product_badges(id) ON DELETE CASCADE,
+    variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+    badge_id   UUID NOT NULL REFERENCES product_badges(id) ON DELETE RESTRICT,
     PRIMARY KEY (variant_id, badge_id)
 );
 CREATE INDEX idx_variant_badges_badge_id ON product_variant_badges(badge_id);
@@ -283,7 +283,7 @@ CREATE INDEX idx_variant_badges_badge_id ON product_variant_badges(badge_id);
 -- =========================================================================
 CREATE TABLE product_trips (
     id              UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-    variant_id      UUID        NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+    variant_id      UUID        NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
     start_date      DATE        NOT NULL,
     end_date        DATE        NOT NULL,
     min_quota       INT         NOT NULL DEFAULT 1,
@@ -305,7 +305,7 @@ CREATE INDEX idx_trips_search     ON product_trips(start_date, min_quota, max_qu
 -- Pricing tiers per trip resolved by age band & capacity quota rules (replaces nationality)
 CREATE TABLE product_trip_pricings (
     id                  UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
-    trip_id             UUID           NOT NULL REFERENCES product_trips(id) ON DELETE CASCADE,
+    trip_id             UUID           NOT NULL REFERENCES product_trips(id) ON DELETE RESTRICT,
     age_band            VARCHAR(50)    NOT NULL,               -- ADULT | INFANT
     min_age             INT            NOT NULL DEFAULT 0,
     max_age             INT            NULL,
@@ -326,8 +326,8 @@ CREATE INDEX idx_pricings_search ON product_trip_pricings(trip_id, age_band, sel
 -- Excluded from base price; available for elective passenger purchase
 CREATE TABLE product_addons (
     id                  UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
-    variant_id          UUID           NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
-    trip_id             UUID           NULL REFERENCES product_trips(id) ON DELETE CASCADE, -- NULL = all trips in variant
+    variant_id          UUID           NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+    trip_id             UUID           NULL REFERENCES product_trips(id) ON DELETE SET NULL, -- NULL = all trips in variant
     code                VARCHAR(50)    NOT NULL, -- e.g. 'ADDON-SINGLE-SUPP'
     name                VARCHAR(255)   NOT NULL, -- e.g. "Single Supplement (Kamar Sendiri)"
     description         TEXT,
@@ -356,8 +356,8 @@ CREATE INDEX idx_addons_variant_trip ON product_addons(variant_id, trip_id);
 -- =========================================================================
 CREATE TABLE product_itineraries (
     id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    variant_id      UUID         NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
-    trip_id         UUID         NULL REFERENCES product_trips(id) ON DELETE CASCADE,
+    variant_id      UUID         NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
+    trip_id         UUID         NULL REFERENCES product_trips(id) ON DELETE SET NULL,
     source_type     VARCHAR(50)  NOT NULL DEFAULT 'INTERNAL', -- MERCHANT | INTERNAL
     itinerary_type  VARCHAR(50)  NOT NULL DEFAULT 'STANDARD', -- STANDARD | CUSTOM
     title           VARCHAR(255) NOT NULL,
@@ -381,7 +381,7 @@ CREATE UNIQUE INDEX uq_itinerary_trip_override
 
 CREATE TABLE product_itinerary_items (
     id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    itinerary_id    UUID         NOT NULL REFERENCES product_itineraries(id) ON DELETE CASCADE,
+    itinerary_id    UUID         NOT NULL REFERENCES product_itineraries(id) ON DELETE RESTRICT,
     day_number      INT          NOT NULL,
     sequence_number INT          NOT NULL,
     item_type       VARCHAR(50)  NOT NULL,       -- ACTIVITY | TRANSPORT | MEAL | ACCOMMODATION | OTHER
@@ -408,12 +408,10 @@ CREATE INDEX idx_itinerary_items_poi          ON product_itinerary_items(poi_are
 -- =========================================================================
 CREATE TABLE product_locations (
     id          UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id  UUID           NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id  UUID           NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     source_type VARCHAR(50)    NOT NULL,                   -- AREA | MANUAL
     area_id     UUID           NOT NULL,                   -- Logical FK → areas.id (POI, COUNTRY, SUB_CONTINENT, or CONTINENT)
     area_name   VARCHAR(100),                              -- Denormalized for fast UI rendering
-    lat         DOUBLE PRECISION,
-    lng         DOUBLE PRECISION,
     address     TEXT,
     sort_order  INT            NOT NULL DEFAULT 0,
     created_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -435,7 +433,7 @@ CREATE INDEX idx_locations_area_name_trgm ON product_locations USING GIN (area_n
 -- =========================================================================
 CREATE TABLE product_media (
     id               UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id       UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id       UUID         NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     storage_provider VARCHAR(50)  NOT NULL DEFAULT 'DATABASE', -- DATABASE (Phase 1) | S3 | CLOUDFLARE_R2 (Phase 2)
     source_upload_id VARCHAR(255),                          -- External upload service or CDN reference ID
     media_type       VARCHAR(50)  NOT NULL,                  -- IMAGE | VIDEO
@@ -456,14 +454,14 @@ CREATE INDEX idx_media_storage    ON product_media(storage_provider);
 
 -- Dedicated table for Phase 1 in-database binary storage (BYTEA)
 CREATE TABLE product_media_blobs (
-    media_id   UUID      PRIMARY KEY REFERENCES product_media(id) ON DELETE CASCADE,
+    media_id   UUID      PRIMARY KEY REFERENCES product_media(id) ON DELETE RESTRICT,
     file_data  BYTEA     NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE product_media_usages (
     id            UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-    media_id      UUID        NOT NULL REFERENCES product_media(id) ON DELETE CASCADE,
+    media_id      UUID        NOT NULL REFERENCES product_media(id) ON DELETE RESTRICT,
     target_type   VARCHAR(50) NOT NULL,    -- PRODUCT | VARIANT | ITINERARY_ITEM
     target_id     UUID        NOT NULL,    -- Polymorphic — resolved by target_type
     usage_context VARCHAR(50) NOT NULL,    -- COVER | GALLERY | THUMBNAIL | ATTACHMENT
@@ -489,7 +487,7 @@ CREATE UNIQUE INDEX uq_media_usages_single_cover
 -- =========================================================================
 CREATE TABLE product_supplementaries (
     id          UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
-    product_id  UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_id  UUID        NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
     target_type VARCHAR(50) NOT NULL,    -- PRODUCT | VARIANT | TRIP
     target_id   UUID        NOT NULL,    -- Polymorphic
     category    VARCHAR(50) NOT NULL,    -- INCLUDED | EXCLUDED | IMPORTANT_INFO | NOTE
@@ -778,8 +776,6 @@ erDiagram
         varchar   source_type "AREA | MANUAL"
         uuid      area_id     FK "logical FK → areas.id (POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
         varchar   area_name   "denormalized landmark/region name"
-        float     lat
-        float     lng
         text      address
         int       sort_order
     }

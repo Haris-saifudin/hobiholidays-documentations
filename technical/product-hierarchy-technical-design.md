@@ -11,7 +11,7 @@
 | [Product Technical Design](./product-technical-design.md)      | **Complete DDL schema** (authoritative), per-table ERDs, Grand West Europe sample data         |
 | [Product Media](./product-media-technical-design.md)           | Media asset repository, polymorphic usages, presigned uploads, CDN delivery                   |
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL search query, indexing strategy                                      |
-| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), standard coordinate model |
+| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), pure relational model |
 | [Contracts](../contracts/product-hierarchy-contract.md)        | All Tours listing feed, variant detail view API contracts                                     |
 | [Backend Guide](../backend/product-hierarchy-backend-guide.md)  | Duration COALESCE resolution, catalog aggregation                                             |
 | [Frontend Guide](../frontend/product-hierarchy-frontend-guide.md)| All Tours catalog card, variant type badging, age-band pricing breakdown selector           |
@@ -100,8 +100,7 @@ $$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
 ### 4. Decoupled PostGIS & Pure Relational Multi-Tier Geography
 
 - **No PostGIS / Spatial Types:** Spatial geometry extensions (`postgis`), geometry types (`GEOMETRY`), and spatial queries (`ST_Contains`, `ST_Within`) are omitted.
-- **Standard WGS-84 Coordinates:** Stored as `DOUBLE PRECISION` (`lat`, `lng`) on `product_locations` and `areas`.
-- **Pure Relational B-Tree Traversal:** Traversal relies on composite indexing `(parent_id, area_type_id, slug)`. Retains only standard extensions (`"uuid-ossp"`, `"pg_trgm"`).
+- **Pure Relational B-Tree Traversal:** Geographic classification and traversal rely on composite B-Tree indexing on `(parent_id, area_type_id, slug)`. Retains only standard extensions (`"uuid-ossp"`, `"pg_trgm"`).
 - **Multi-Tier Anchoring:** `product_locations.area_id` anchors to any tier (`CONTINENT`, `SUB_CONTINENT`, `COUNTRY`, `POI`), resolved dynamically upwards to `CONTINENT` via SQL `CASE` joins.
 
 ### 5. Trip-Scoped Departures
@@ -370,8 +369,6 @@ erDiagram
         varchar   source_type
         uuid      area_id      FK "logical FK → areas.id (POI or Country)"
         varchar   area_name    "denormalized"
-        float     lat
-        float     lng
         text      address
         int       sort_order
         timestamp created_at
@@ -570,19 +567,19 @@ product_variants
 | Relationship                                      | Type              | Cardinality | Constraint                                                 |
 | :------------------------------------------------ | :---------------- | :---------- | :--------------------------------------------------------- |
 | `product_categories` → `products`                 | Hard FK           | 1 : N       | `ON DELETE SET NULL` (parent & child category)             |
-| `products` → `product_journeys`                   | Hard FK           | 1 : 1       | `ON DELETE CASCADE`                                        |
-| `products` → `product_variants`                   | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
-| `product_variants` → `product_trips`              | Hard FK           | 1 : N       | `ON DELETE CASCADE` + `UNIQUE(variant_id, start_date)`     |
-| `product_trips` → `product_trip_pricings`         | Hard FK           | 1 : N       | `ON DELETE CASCADE` + `UNIQUE(trip_id, age_band)`          |
-| `product_variants` → `product_addons`             | Hard FK           | 1 : N       | `ON DELETE CASCADE` (optional extras)                      |
-| `product_variants` → `product_itineraries`        | Hard FK           | 1 : 1       | `ON DELETE CASCADE` + `uq_itinerary_variant_default`       |
-| `product_trips` → `product_itineraries`           | Hard FK           | 1 : 1       | `ON DELETE CASCADE` + `uq_itinerary_trip_override`         |
-| `product_itineraries` → `items`                   | Hard FK           | 1 : N       | `ON DELETE CASCADE` (`product_itinerary_items`)            |
-| `products` → `product_locations`                  | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `products` → `product_journeys`                   | Hard FK           | 1 : 1       | `ON DELETE RESTRICT`                                       |
+| `products` → `product_variants`                   | Hard FK           | 1 : N       | `ON DELETE RESTRICT`                                       |
+| `product_variants` → `product_trips`              | Hard FK           | 1 : N       | `ON DELETE RESTRICT` + `UNIQUE(variant_id, start_date)`    |
+| `product_trips` → `product_trip_pricings`         | Hard FK           | 1 : N       | `ON DELETE RESTRICT` + `UNIQUE(trip_id, age_band)`         |
+| `product_variants` → `product_addons`             | Hard FK           | 1 : N       | `ON DELETE RESTRICT` (optional extras)                     |
+| `product_variants` → `product_itineraries`        | Hard FK           | 1 : 1       | `ON DELETE RESTRICT` + `uq_itinerary_variant_default`      |
+| `product_trips` → `product_itineraries`           | Hard FK           | 1 : 1       | `ON DELETE SET NULL` + `uq_itinerary_trip_override`        |
+| `product_itineraries` → `items`                   | Hard FK           | 1 : N       | `ON DELETE RESTRICT` (`product_itinerary_items`)           |
+| `products` → `product_locations`                  | Hard FK           | 1 : N       | `ON DELETE RESTRICT`                                       |
 | `areas` → `product_locations`                     | Logical FK        | 1 : N       | Inter-domain reference (Flexible anchor: POI, Country, Sub-Continent, or Continent) |
-| `products` → `product_media`                      | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
-| `product_media` → `product_media_usages`          | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
-| `products` → `product_supplementaries`            | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
+| `products` → `product_media`                      | Hard FK           | 1 : N       | `ON DELETE RESTRICT`                                       |
+| `product_media` → `product_media_usages`          | Hard FK           | 1 : N       | `ON DELETE RESTRICT`                                       |
+| `products` → `product_supplementaries`            | Hard FK           | 1 : N       | `ON DELETE RESTRICT`                                       |
 
 ---
 

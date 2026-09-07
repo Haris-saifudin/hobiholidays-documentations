@@ -13,7 +13,7 @@
 | :--- | :--- | :--- |
 | **[Product Technical Design](./product-technical-design.md)** | Core Catalog & Entities | **Authoritative single source of truth for PostgreSQL DDL**: Products (L1), Journeys, Variants (L2), Trips (L3), Pricing tiers (L3+), Itineraries, Locations, Media, Supplementaries, and SEO tables. Includes audit triggers and composite indexes. |
 | **[Product Hierarchy Technical Design](./product-hierarchy-technical-design.md)** | Catalog Structural Model | **3-level Product Hierarchy mental model** (`Product → Variant → Trip → Pricing`), catalog lifecycle management (`listing_status`), duration inheritance resolution, nominal capacity indicators, and real-world GWE catalog examples. |
-| **[Area Domain Technical Design](./area-technical-design.md)** | Geographic Hierarchy | **4-tier Geography tree** (`Continent → Sub Continent → Country → POI`), adjacency list pattern, standard WGS-84 coordinates, flexible flat anchoring (POI, Country, Sub-Continent, Continent), and dynamic upward hierarchy traversal. |
+| **[Area Domain Technical Design](./area-technical-design.md)** | Geographic Hierarchy | **4-tier Geography tree** (`Continent → Sub Continent → Country → POI`), adjacency list pattern, pure relational hierarchy, flexible flat anchoring (POI, Country, Sub-Continent, Continent), and dynamic upward hierarchy traversal. |
 | **[Search & Filter Architecture](./product-search-filter-technical-design.md)** | Discovery Engine | **Catalog Search Mechanics**: High-performance relational join strategy with dynamic upward Area traversal, PostgreSQL `pg_trgm` GIN indexes, window function result counting (`COUNT(*) OVER()`), and execution plan optimization. |
 | **[Product Media Technical Design](./product-media-technical-design.md)** | Media Asset Subsystem | **2-Phase Progressive Storage Architecture**: Phase 1 (Database-First `BYTEA` storage & streaming) to Phase 2 (Cloud S3/R2 Object Store + Cloudflare CDN), polymorphic visual asset binding (`IMAGE` and `VIDEO`). Official tour itinerary PDF brochures are compiled externally by ATW and referenced directly via `itinerary_pdf_url`. |
 | **[SEO Technical Design](./seo-technical-design.md)** | Discovery & Rich Snippets | **Polymorphic Metadata Architecture**: `seo_metadata` schema, dynamic programmatic fallback formulas, and Schema.org graph architectures (`TouristTrip`, `Product`, `Offer`, `BreadcrumbList`). |
@@ -42,10 +42,9 @@ All data models within this repository adhere to the following PostgreSQL 16+ en
 - Row mutations automatically invoke the database trigger function `set_updated_at_timestamp()` before update.
 - Core catalog entities (`products`, `product_variants`, `areas`) enforce soft deletion via nullable `deleted_at TIMESTAMP NULL` and state machine governance via `listing_status` (`'ACTIVE'`, `'INACTIVE'`, `'ARCHIVED'`). Catalog synchronization from ATW is non-destructive and idempotent, eliminating the need for destructive cascading database drops (`DELETE CASCADE`).
 
-### 3. Decoupled Spatial Geometry & Standard Coordinates (WGS-84)
+### 3. Decoupled PostGIS & Pure Relational Geography
 - All PostGIS extensions, geometry columns (`GEOMETRY`), GiST spatial indexes, and spatial query operators (`ST_Contains`, `ST_Within`) are strictly eliminated.
-- Geographic coordinates are stored as standard `DOUBLE PRECISION` float columns (`lat`, `lng`) on `areas` and `product_locations`.
-- Hierarchy navigation uses pure relational B-Tree indexing on `(parent_id, area_type_id, slug)`.
+- Hierarchy classification and navigation use pure relational B-Tree indexing on `(parent_id, area_type_id, slug)` and trigram text search.
 - The platform retains only standard PostgreSQL extensions: `"uuid-ossp"` and `"pg_trgm"`.
 
 ### 4. Decoupled Booking Concurrency & Read-Only Nominal Availability

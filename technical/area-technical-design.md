@@ -23,13 +23,13 @@ The following architectural guidelines must be strictly adhered to during implem
 
 The geography tree follows a standardized 4-tier taxonomy: **Continent (Tier 1) → Sub Continent (Tier 2) → Country (Tier 3) → POI (Point of Interest, Tier 4)**. To handle multi-level geographical relationships efficiently without recursive performance hits on deep reads, the architecture combines an **Adjacency List (`parent_id`)** with composite B-Tree indexing on `(parent_id, area_type_id, slug)` for rapid subtree lookups and traversal. POIs represent individual landmarks, attractions, or specific visiting spots (e.g., *Keukenhof Gardens*, *Eiffel Tower*, *Mount Fuji*).
 
-### 2. Decouple PostGIS & Spatial Geometry (Standard WGS-84 Coordinates)
+### 2. Pure Relational Multi-Tier Geography (Decouple PostGIS & Spatial Types)
 
-The platform deliberately decouples PostGIS dependencies:
+The platform deliberately decouples PostGIS and spatial dependencies:
 - **No PostGIS Extensions:** `CREATE EXTENSION IF NOT EXISTS "postgis";` is strictly omitted. Only standard PostgreSQL extensions (`"uuid-ossp"` and `"pg_trgm"`) are retained.
-- **No Spatial Geometry Types or GiST Indexes:** PostGIS geometry columns (`GEOMETRY(Point, 4326)`, `GEOMETRY(Polygon, 4326)`) and GiST spatial indexes are removed.
+- **No Spatial Geometry Types or GiST Indexes:** PostGIS geometry columns (`GEOMETRY`), GiST spatial indexes, and coordinate dependencies are removed.
 - **No Spatial Functions:** Spatial queries like `ST_Contains` or `ST_Within` are not used.
-- **Standard Float Coordinates:** Coordinates are stored as standard `DOUBLE PRECISION` float columns (`lat`, `lng`) on `areas` and `product_locations` under WGS-84 coordinate reference system, used directly for map rendering and distance display.
+- **Pure Relational Hierarchy:** All geographic classification, search, and navigation rely purely on relational B-Tree indexing on `(parent_id, area_type_id, slug)` and trigram text search.
 
 ### 3. Safe & Idempotent Catalog Lifecycle (No Hard Cascade Delete Required)
 
@@ -86,8 +86,6 @@ CREATE TABLE areas (
     name VARCHAR(255) NOT NULL,
     slug VARCHAR(255) UNIQUE NOT NULL,
     iso_code VARCHAR(10), -- ISO 3166-1 alpha-2 for countries (e.g. NL, FR, JP)
-    lat DOUBLE PRECISION,
-    lng DOUBLE PRECISION,
     listing_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE | INACTIVE | ARCHIVED
     sort_order INT DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -153,8 +151,6 @@ erDiagram
         varchar   name           "e.g. Europe, Western Europe, Netherlands, Keukenhof Gardens"
         varchar   slug           "e.g. europe, western-europe, netherlands, keukenhof-gardens"
         varchar   iso_code       "ISO 3166-1 alpha-2 (NL, FR, JP)"
-        double    lat
-        double    lng
         varchar   listing_status "ACTIVE | INACTIVE | ARCHIVED"
         int       sort_order
         timestamp created_at
@@ -168,8 +164,6 @@ erDiagram
         varchar   source_type "AREA | MANUAL"
         uuid      area_id     FK "logical FK → areas.id (anchored to POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
         varchar   area_name   "denormalized destination / landmark name"
-        double    lat
-        double    lng
         text      address
         int       sort_order
         timestamp created_at
@@ -200,12 +194,12 @@ erDiagram
 
 **`areas`**
 
-| id | parent_id | area_type_id | code | name | slug | iso_code | lat | lng | listing_status | sort_order |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| area_eur_01 | NULL | 1 | EUR | Europe | europe | NULL | 54.5260 | 15.2551 | ACTIVE | 1 |
-| area_weur_01 | area_eur_01 | 2 | WEUR | Western Europe | western-europe | NULL | 48.8566 | 2.3522 | ACTIVE | 2 |
-| area_nl_01 | area_weur_01 | 3 | NL | Netherlands | netherlands | NL | 52.1326 | 5.2913 | ACTIVE | 3 |
-| area_keukenhof_01 | area_nl_01 | 4 | NL-KEUKENHOF | Keukenhof Gardens | keukenhof-gardens | NULL | 52.2699 | 4.5463 | ACTIVE | 4 |
+| id | parent_id | area_type_id | code | name | slug | iso_code | listing_status | sort_order |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| area_eur_01 | NULL | 1 | EUR | Europe | europe | NULL | ACTIVE | 1 |
+| area_weur_01 | area_eur_01 | 2 | WEUR | Western Europe | western-europe | NULL | ACTIVE | 2 |
+| area_nl_01 | area_weur_01 | 3 | NL | Netherlands | netherlands | NL | ACTIVE | 3 |
+| area_keukenhof_01 | area_nl_01 | 4 | NL-KEUKENHOF | Keukenhof Gardens | keukenhof-gardens | NULL | ACTIVE | 4 |
 
 **`product_locations` (Flexible Cross-Domain Anchoring Sample)**
 
@@ -335,8 +329,6 @@ SELECT
   country_area.code AS country_code,
   subcont_area.name AS sub_continent,
   continent_area.name AS continent,
-  pl.lat,
-  pl.lng,
   pl.sort_order
 FROM product_locations pl
 INNER JOIN areas target_area ON target_area.id = pl.area_id

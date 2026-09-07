@@ -6,7 +6,7 @@
 > **Core Architectural Principles:**
 > - **Slug-Based Path Identification:** All master products (`/api/v1/products/:slug`) and bookable tour variants (`/api/v1/variants/:slug`) use indexed, human-readable natural slugs as their primary URL path parameters.
 > - **Category Taxonomy:** 2-tier parent-child category tree (`product_categories`) linked to Products.
-> - **Flexible Flat Geography (No PostGIS):** `product_locations.area_id` anchors to ANY level in the 4-tier geography tree (`CONTINENT`, `SUB_CONTINENT`, `COUNTRY`, `POI`). Returns flat nullable structures with standard WGS-84 float coordinates (`lat`, `lng`). PostGIS and spatial types are eliminated.
+> - **Flexible Flat Geography (No PostGIS):** `product_locations.area_id` anchors to ANY level in the 4-tier geography tree (`CONTINENT`, `SUB_CONTINENT`, `COUNTRY`, `POI`). Returns flat nullable structures with dynamic upward traversal. PostGIS, spatial types, and coordinates are eliminated from the catalog contract.
 > - **Read-Only Nominal Availability (Decoupled Concurrency Locking):** Catalog endpoints surface nominal available seat capacity ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$). Concurrency locking and transactional quota allocation are delegated downstream to Phase 3 (Booking Domain).
 > - **Safe & Idempotent Catalog Lifecycle:** ATW catalog synchronization is non-destructive and governed by `listing_status` and `deleted_at` timestamps without hard cascading drops.
 > - **Itinerary Hierarchy:** Owned at **Variant level (L2)** as default master itinerary, with optional override at **Trip level (L3)**.
@@ -403,8 +403,6 @@ Returns destination markers linked to the Area domain with dynamic upward resolu
       "countryCode": "NL",
       "subContinent": "Western Europe",
       "continent": "Europe",
-      "lat": 52.2698,
-      "lng": 4.5469,
       "sortOrder": 1
     },
     {
@@ -415,8 +413,6 @@ Returns destination markers linked to the Area domain with dynamic upward resolu
       "countryCode": "JP",
       "subContinent": "East Asia",
       "continent": "Asia",
-      "lat": 36.2048,
-      "lng": 138.2529,
       "sortOrder": 2
     }
   ]
@@ -427,19 +423,11 @@ Returns destination markers linked to the Area domain with dynamic upward resolu
 
 #### Request DTO (`AttachProductLocationDto`)
 ```typescript
-import { IsUUID, IsOptional, IsInt, Min, IsNumber } from 'class-validator';
+import { IsUUID, IsOptional, IsInt, Min } from 'class-validator';
 
 export class AttachProductLocationDto {
   @IsUUID('4')
   areaId: string; // Area UUID (anchored to POI, Country, Sub-Continent, or Continent)
-
-  @IsOptional()
-  @IsNumber()
-  lat?: number;
-
-  @IsOptional()
-  @IsNumber()
-  lng?: number;
 
   @IsOptional()
   @IsInt()

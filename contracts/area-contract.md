@@ -291,8 +291,6 @@ Returns paginated list of points of interest (Tier 4 leaf nodes) under a specifi
       "name": "Eiffel Tower",
       "slug": "eiffel-tower",
       "listingStatus": "ACTIVE",
-      "lat": 48.8584,
-      "lng": 2.2945,
       "toursCount": 19,
       "createdAt": "2026-01-01T00:00:00.000Z",
       "updatedAt": "2026-09-04T08:00:00.000Z"
@@ -303,8 +301,6 @@ Returns paginated list of points of interest (Tier 4 leaf nodes) under a specifi
       "name": "Louvre Museum",
       "slug": "louvre-museum",
       "listingStatus": "ACTIVE",
-      "lat": 48.8606,
-      "lng": 2.3376,
       "toursCount": 15,
       "createdAt": "2026-01-01T00:00:00.000Z",
       "updatedAt": "2026-09-04T08:00:00.000Z"
@@ -517,18 +513,6 @@ export class CreateAreaDto {
   @IsOptional()
   @IsString()
   isoCode?: string; // e.g. "FR" (for countries)
-
-  @IsOptional()
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  lat?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  lng?: number;
 }
 ```
 
@@ -556,7 +540,7 @@ export class CreateAreaDto {
 
 #### Request DTO
 ```typescript
-import { IsString, IsOptional, IsNumber, IsIn, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsIn } from 'class-validator';
 
 export class UpdateAreaDto {
   @IsOptional()
@@ -570,18 +554,6 @@ export class UpdateAreaDto {
   @IsOptional()
   @IsString()
   isoCode?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  lat?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  lng?: number;
 
   @IsOptional()
   @IsString()
