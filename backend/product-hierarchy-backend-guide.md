@@ -1,7 +1,7 @@
 # Product Hierarchy — NestJS Backend Implementation Guide
 
 > **Pillar 3: NestJS Backend Implementation**
-> Backend implementation guide for the 3-Level Product Hierarchy (`Product → Variant → Trip → Pricing`). Covers Variant catalog aggregation with category badges, duration inheritance resolution via SQL `COALESCE`, default master itinerary with trip override resolution (`trip.itinerary ?? variant.itinerary`), and booking transaction safety with Pessimistic Locking (`SELECT ... FOR UPDATE`) enforcing `consumes_quota` seat allocation rules.
+> Backend implementation guide for the 3-Level Product Hierarchy (`Product → Variant → Trip → Pricing`). Covers Variant catalog aggregation with category badges, duration inheritance resolution via SQL `COALESCE`, default master itinerary with trip override resolution (`trip.itinerary ?? variant.itinerary`), and read-optimized departure schedule retrieval with nominal seat availability indicators (`availableSeats = max_quota - booked_seats`).
 >
 > **Related Design Document:** [Product Hierarchy Technical Design](../technical/product-hierarchy-technical-design.md)  
 > **API Contract:** [Product Hierarchy Contracts](../contracts/product-hierarchy-contract.md)  
@@ -23,14 +23,14 @@ src/modules/product-hierarchy/
 ├── controllers/
 │   ├── variant.controller.ts             # Public All Tours feed & PDP
 │   ├── itinerary-resolution.controller.ts# Trip vs Variant itinerary fallback
-│   └── trip-booking.controller.ts        # Departure selection & quota reservation
+│   └── trip-availability.controller.ts   # Departure selection & capacity indicators
 ├── services/
 │   ├── product-hierarchy.service.ts      # Catalog aggregation & inheritance
 │   ├── itinerary-resolution.service.ts   # trip.itinerary ?? variant.itinerary
-│   └── booking-transaction.service.ts    # Pessimistic lock quota management
+│   └── trip-availability.service.ts      # Nominal capacity & available seats aggregation
 └── dto/
     ├── list-variants.dto.ts
-    └── reserve-trip-quota.dto.ts
+    └── list-variant-trips.dto.ts
 ```
 
 ---
@@ -114,20 +114,35 @@ export class ProductHierarchyService {
           FROM product_trips pt
           WHERE pt.variant_id = v.id AND pt.status = 'ACTIVE' AND pt.start_date >= CURRENT_DATE
         ) AS total_active_departures,
-        -- 4-tier Destination stop markers:
+        -- Flexible Flat Destination stop markers (dynamic upward traversal):
         COALESCE(
           (
             SELECT json_agg(json_build_object(
-              'poi', a_poi.name,
-              'country', a_country.name,
-              'subContinent', a_sub.name,
-              'continent', a_cont.name
+              'continent', continent_area.name,
+              'subContinent', subcont_area.name,
+              'country', country_area.name,
+              'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END
             ) ORDER BY pl.sort_order ASC)
             FROM product_locations pl
-            INNER JOIN areas a_poi ON a_poi.id = pl.area_id
-            LEFT JOIN areas a_country ON a_country.id = a_poi.parent_id
-            LEFT JOIN areas a_sub ON a_sub.id = a_country.parent_id
-            LEFT JOIN areas a_cont ON a_cont.id = a_sub.parent_id
+            INNER JOIN areas target_area ON target_area.id = pl.area_id
+            LEFT JOIN areas country_area ON country_area.id = CASE
+              WHEN target_area.area_type_id = 4 THEN target_area.parent_id
+              WHEN target_area.area_type_id = 3 THEN target_area.id
+              ELSE NULL
+            END
+            LEFT JOIN areas subcont_area ON subcont_area.id = CASE
+              WHEN target_area.area_type_id = 4 THEN country_area.parent_id
+              WHEN target_area.area_type_id = 3 THEN target_area.parent_id
+              WHEN target_area.area_type_id = 2 THEN target_area.id
+              ELSE NULL
+            END
+            LEFT JOIN areas continent_area ON continent_area.id = CASE
+              WHEN target_area.area_type_id = 4 THEN subcont_area.parent_id
+              WHEN target_area.area_type_id = 3 THEN subcont_area.parent_id
+              WHEN target_area.area_type_id = 2 THEN target_area.parent_id
+              WHEN target_area.area_type_id = 1 THEN target_area.id
+              ELSE NULL
+            END
             WHERE pl.product_id = p.id
           ),
           '[]'::json
@@ -367,117 +382,101 @@ export class ItineraryResolutionService {
 
 ---
 
-## 🔒 Quota Concurrency: Pessimistic Locking & `consumes_quota` Rule
+## 📊 Read-Optimized Seat Availability & Quota Indicators (Catalog Scope)
 
-To guarantee that concurrent bookings never over-allocate seats, the booking transaction locks the trip row exclusively (`SELECT ... FOR UPDATE`). Only passengers with `consumes_quota = TRUE` consume seat capacity (infants are configured via `consumes_quota`: `FALSE` for lap infants, or `TRUE` if an aircraft/bus seat or cot is allocated):
+Real-time concurrency locks (`SELECT ... FOR UPDATE`) and transactional seat reservations are decoupled from the website catalog contract, belonging downstream to the Checkout/Booking domain.
+
+For storefront discovery, PDP departure calendars, and "Where To?" search feeds, the backend computes nominal available seat indicators (`availableSeats = max_quota - booked_seats`):
 
 ```typescript
-// services/booking-transaction.service.ts
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+// services/trip-availability.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-export interface PassengerBookingItem {
-  passengerName: string;
-  ageBand: 'ADULT' | 'INFANT';
-}
-
-export interface ReserveSeatDto {
+export interface TripAvailabilitySummary {
   tripId: string;
-  customerId: string;
-  passengers: PassengerBookingItem[];
+  tripCode: string;
+  startDate: string;
+  endDate: string;
+  status: 'ACTIVE' | 'FULL' | 'CANCELLED';
+  minQuota: number;
+  maxQuota: number;
+  bookedSeats: number;
+  availableSeats: number;
+  isBookable: boolean;
+  pricings: {
+    ageBand: 'ADULT' | 'INFANT';
+    sellingPrice: number;
+    currency: string;
+    consumesQuota: boolean;
+  }[];
 }
 
 @Injectable()
-export class BookingTransactionService {
+export class TripAvailabilityService {
   constructor(private readonly dataSource: DataSource) {}
 
-  async reserveSeats(dto: ReserveSeatDto) {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+  /**
+   * Retrieves active upcoming departures with nominal seat availability
+   * and age-band pricing tiers for catalog display.
+   */
+  async getVariantTrips(variantId: string): Promise<TripAvailabilitySummary[]> {
+    const query = `
+      SELECT
+        t.id,
+        t.trip_code,
+        t.start_date,
+        t.end_date,
+        t.status,
+        t.min_quota,
+        t.max_quota,
+        COALESCE(b.booked_count, 0) AS booked_seats,
+        GREATEST(0, t.max_quota - COALESCE(b.booked_count, 0)) AS available_seats,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'ageBand', ptp.age_band,
+              'sellingPrice', ptp.selling_price,
+              'currency', ptp.currency,
+              'consumesQuota', ptp.consumes_quota
+            ) ORDER BY (CASE WHEN ptp.age_band = 'ADULT' THEN 1 ELSE 2 END))
+            FROM product_trip_pricings ptp
+            WHERE ptp.trip_id = t.id
+          ),
+          '[]'::json
+        ) AS pricings
+      FROM product_trips t
+      LEFT JOIN (
+        SELECT ptb.trip_id, SUM(CASE WHEN ptp.consumes_quota THEN 1 ELSE 0 END) AS booked_count
+        FROM product_trip_bookings ptb
+        INNER JOIN product_trip_pricings ptp ON ptp.id = ptb.pricing_id
+        WHERE ptb.booking_status IN ('CONFIRMED', 'PAID')
+        GROUP BY ptb.trip_id
+      ) b ON b.trip_id = t.id
+      WHERE t.variant_id = $1
+        AND t.status = 'ACTIVE'
+        AND t.start_date >= CURRENT_DATE
+      ORDER BY t.start_date ASC;
+    `;
 
-    try {
-      // 1. Lock the trip row exclusively
-      const tripRows = await queryRunner.query(
-        `SELECT id, variant_id, status, max_quota, start_date
-         FROM product_trips
-         WHERE id = $1
-         FOR UPDATE`,
-        [dto.tripId],
-      );
+    const rows = await this.dataSource.query(query, [variantId]);
 
-      if (!tripRows.length) throw new NotFoundException(`Trip '${dto.tripId}' not found`);
-      const trip = tripRows[0];
-
-      if (trip.status !== 'ACTIVE') {
-        throw new ConflictException(`Trip is not open for booking (status: ${trip.status})`);
-      }
-
-      // 2. Fetch pricing rules for age bands to identify consumes_quota
-      const pricingTiers = await queryRunner.query(
-        `SELECT id, age_band, consumes_quota
-         FROM product_trip_pricings
-         WHERE trip_id = $1`,
-        [dto.tripId],
-      );
-      const quotaRuleMap = new Map<string, boolean>();
-      pricingTiers.forEach((p: any) => quotaRuleMap.set(p.age_band, p.consumes_quota));
-
-      // Calculate seats required (only count passengers where consumes_quota = TRUE)
-      const seatsRequired = dto.passengers.filter(
-        (p) => quotaRuleMap.get(p.ageBand) !== false,
-      ).length;
-
-      // 3. Count confirmed seats already allocated
-      const bookingSum = await queryRunner.query(
-        `SELECT COALESCE(SUM(CASE WHEN ptp.consumes_quota THEN 1 ELSE 0 END), 0) AS total_booked
-         FROM product_trip_bookings ptb
-         INNER JOIN product_trip_pricings ptp ON ptp.id = ptb.pricing_id
-         WHERE ptb.trip_id = $1 AND ptb.booking_status IN ('PENDING_PAYMENT', 'CONFIRMED', 'PAID')`,
-        [dto.tripId],
-      );
-
-      const totalBooked = parseInt(bookingSum[0].total_booked, 10);
-      const remainingQuota = trip.max_quota - totalBooked;
-
-      if (remainingQuota < seatsRequired) {
-        throw new ConflictException(
-          `Insufficient quota: requested ${seatsRequired} seats, but only ${remainingQuota} seats remain`,
-        );
-      }
-
-      // 4. Insert booking records
-      const bookingResult = await queryRunner.query(
-        `INSERT INTO product_trip_bookings
-          (trip_id, customer_id, pax_count, booking_status, expires_at)
-         VALUES ($1, $2, $3, 'PENDING_PAYMENT', NOW() + INTERVAL '15 minutes')
-         RETURNING id`,
-        [dto.tripId, dto.customerId, dto.passengers.length],
-      );
-
-      // Auto-update trip status to 'FULL' if quota reached
-      if (remainingQuota - seatsRequired === 0) {
-        await queryRunner.query(
-          `UPDATE product_trips SET status = 'FULL' WHERE id = $1`,
-          [dto.tripId],
-        );
-      }
-
-      await queryRunner.commitTransaction();
-
+    return rows.map((r: any) => {
+      const availableSeats = parseInt(r.available_seats, 10);
       return {
-        bookingId: bookingResult[0].id,
-        tripId: dto.tripId,
-        seatsAllocated: seatsRequired,
-        totalPassengers: dto.passengers.length,
-        expiresInMinutes: 15,
+        tripId: r.id,
+        tripCode: r.trip_code,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        status: r.status,
+        minQuota: r.min_quota,
+        maxQuota: r.max_quota,
+        bookedSeats: parseInt(r.booked_seats, 10),
+        availableSeats,
+        isBookable: r.status === 'ACTIVE' && availableSeats > 0,
+        pricings: r.pricings || [],
       };
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+    });
   }
 }
 ```

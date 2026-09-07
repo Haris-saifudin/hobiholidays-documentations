@@ -12,8 +12,8 @@
 | Guide Document | Domain Scope | Primary Backend Implementation Focus |
 | :--- | :--- | :--- |
 | **[Product Backend Guide](./product-backend-guide.md)** | Master Products & Catalog | `ProductModule`, `CategoryModule`, split sub-resource controllers (`/media`, `/locations`, `/variants`, `/supplementaries`, `/seo`), Variant Itineraries & Add-ons, Trip age-band pricings with components, and transaction boundaries. |
-| **[Product Hierarchy Backend Guide](./product-hierarchy-backend-guide.md)** | 3-Level Catalog & Booking | `ProductHierarchyService`, `COALESCE` duration inheritance, variant/trip itinerary fallback resolution (`trip.itinerary ?? variant.itinerary`), pessimistic locking (`SELECT ... FOR UPDATE`) with `consumes_quota` seat allocation. |
-| **[Area Domain Backend Guide](./area-backend-guide.md)** | Geographic Domain | `AreaModule`, `AreaService`, recursive Common Table Expression (CTE) 4-tier tree traversal queries (`Continent → Sub Continent → Country → POI`), PostGIS coordinates calculations, and in-memory reference caching. |
+| **[Product Hierarchy Backend Guide](./product-hierarchy-backend-guide.md)** | 3-Level Catalog & Discovery | `ProductHierarchyService`, `COALESCE` duration inheritance, variant/trip itinerary fallback resolution (`trip.itinerary ?? variant.itinerary`), and read-optimized seat availability indicators (`availableSeats = max_quota - booked_seats`). |
+| **[Area Domain Backend Guide](./area-backend-guide.md)** | Geographic Domain | `AreaModule`, `AreaService`, recursive Common Table Expression (CTE) 4-tier tree traversal queries (`Continent → Sub Continent → Country → POI`), WGS-84 coordinate management, flexible flat anchoring, and in-memory reference caching. |
 | **[Search & Filter Backend Guide](./product-search-filter-backend-guide.md)** | Discovery Engine | `SearchFilterService`, parameterized dynamic SQL query builder, trigram similarity matching (`pg_trgm`), and window function result counting (`COUNT(*) OVER()`). |
 | **[Product Media Backend Guide](./product-media-backend-guide.md)** | Media Subsystem | `MediaModule`, Multer 25MB file interceptor, `BYTEA` streaming controller with HTTP cache headers, AWS SDK S3 presigned URL generator, and zero-downtime Phase 1 to Phase 2 migration script. |
 | **[SEO Backend Guide](./seo-backend-guide.md)** | SEO & Structured Data | `SeoModule`, `SeoService`, polymorphic fallback resolver (Layer A custom DB vs Layer B formulaic dynamic fallback), and Schema.org JSON-LD generator helper. |
@@ -135,7 +135,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 ```
 
 ### 4. Database Transaction Management
-To maintain atomicity across multi-table operations (e.g. creating a Product + initial Journey row, or reserving Trip Quota), services execute operations within database transactions:
+To maintain atomicity across multi-table catalog operations (e.g. creating a Product + initial Journey row, or publishing Variant editions), services execute operations within database transactions. Note that in the Phase 1 Catalog domain, departure seat availability is computed purely as a read-only nominal metric ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$); transactional checkout reservations and pessimistic concurrency locking are delegated downstream to Phase 3 (Booking Domain).
 
 ```typescript
 import { DataSource } from 'typeorm';

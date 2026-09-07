@@ -1,7 +1,7 @@
 # Area Domain — NestJS Backend Implementation Guide
 
 > **Pillar 3: NestJS Backend Implementation**
-> Backend engineering guide for the Area Domain subsystem, managing the **4-tier Geographic Hierarchy** (`Continent → Sub Continent → Country → POI`). Covers recursive Common Table Expressions (CTE) for tree traversal, PostGIS spatial coordinate lookups, autocomplete discovery, and in-memory reference caching.
+> Backend engineering guide for the Area Domain subsystem, managing the **4-tier Geographic Hierarchy** (`Continent → Sub Continent → Country → POI`). Covers hierarchical tree assembly, standard WGS-84 coordinate mapping, autocomplete discovery, and in-memory reference caching.
 >
 > **Related Design Document:** [Area Domain Technical Design](../technical/area-technical-design.md)  
 > **API Contract:** [Area Contracts](../contracts/area-contract.md)  
@@ -20,8 +20,7 @@ src/modules/area/
 │   ├── area.controller.ts             # Public autocomplete, 4-tier tree, and listings
 │   └── area-admin.controller.ts       # Administrative CRUD operations
 ├── services/
-│   ├── area.service.ts                # Hierarchical tree & cache resolution
-│   └── area-spatial.service.ts        # PostGIS geometric boundary lookups
+│   └── area.service.ts                # Hierarchical tree & cache resolution
 └── dto/
     ├── search-area-autocomplete.dto.ts
     └── create-area.dto.ts
@@ -29,9 +28,9 @@ src/modules/area/
 
 ---
 
-## 🌳 Hierarchical Tree Traversal via Recursive CTE
+## 🌳 Hierarchical Tree Traversal & In-Memory Assembly
 
-The geographic model uses an adjacency list (`parent_id`) strictly structured across 4 tiers (`CONTINENT → SUB_CONTINENT → COUNTRY → POI`). The backend resolves ancestor/descendant paths via a recursive PostgreSQL Common Table Expression (CTE) or single-pass in-memory dictionary assembly:
+The geographic model uses an adjacency list (`parent_id`) structured across 4 tiers (`CONTINENT → SUB_CONTINENT → COUNTRY → POI`). The backend resolves the tree in a single-pass in-memory dictionary assembly with 24-hour Redis caching:
 
 ```typescript
 // services/area.service.ts
@@ -58,7 +57,7 @@ export class AreaService {
 
     // Fetch all 4 tiers in a single indexed query
     const areas = await this.dataSource.query(`
-      SELECT a.id, a.parent_id, a.name, a.slug, at.name AS area_type, a.code, a.sort_order
+      SELECT a.id, a.parent_id, a.name, a.slug, at.name AS area_type, a.code, a.lat, a.lng, a.sort_order
       FROM areas a
       INNER JOIN area_types at ON at.id = a.area_type_id
       WHERE a.deleted_at IS NULL
@@ -128,6 +127,8 @@ export class AreaService {
         a.name,
         a.slug,
         at.name AS area_type,
+        a.lat,
+        a.lng,
         p.name AS parent_name,
         p.slug AS parent_slug,
         gp.name AS grandparent_name,
@@ -151,49 +152,6 @@ export class AreaService {
     `;
 
     return this.dataSource.query(sql, [`%${trimmed}%`, `${trimmed}%`, limit]);
-  }
-}
-```
-
----
-
-## 🗺️ PostGIS Spatial Boundary Execution
-
-When calculating whether GPS coordinates fall inside an administrative boundary:
-
-```typescript
-// services/area-spatial.service.ts
-import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
-
-@Injectable()
-export class AreaSpatialService {
-  constructor(private readonly dataSource: DataSource) {}
-
-  /**
-   * Checks if a GPS coordinate (latitude, longitude) falls inside
-   * an area's administrative boundary polygon or matches nearest POI coordinates.
-   */
-  async findAreaByCoordinates(lat: number, lng: number) {
-    const sql = `
-      SELECT a.id, a.name, a.slug, at.name AS area_type
-      FROM areas a
-      INNER JOIN area_types at ON at.id = a.area_type_id
-      WHERE a.deleted_at IS NULL
-        AND a.boundary IS NOT NULL
-        AND ST_Contains(a.boundary, ST_SetSRID(ST_MakePoint($1, $2), 4326))
-      ORDER BY
-        (CASE at.name
-          WHEN 'POI' THEN 1
-          WHEN 'COUNTRY' THEN 2
-          WHEN 'SUB_CONTINENT' THEN 3
-          WHEN 'CONTINENT' THEN 4
-          ELSE 5 END) ASC
-      LIMIT 1;
-    `;
-
-    const rows = await this.dataSource.query(sql, [lng, lat]);
-    return rows[0] || null;
   }
 }
 ```

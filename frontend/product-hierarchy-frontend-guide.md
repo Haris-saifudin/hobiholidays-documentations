@@ -35,6 +35,13 @@ export interface CategorySummary {
   slug: string;
 }
 
+export interface DestinationHierarchyDto {
+  continent: string;
+  subContinent?: string | null;
+  country?: string | null;
+  poi?: string | null;
+}
+
 export interface VariantBadge {
   id: string;
   code: string;
@@ -55,6 +62,7 @@ export interface VariantCardProps {
     badges?: VariantBadge[];
     category?: CategorySummary;
     parentCategory?: CategorySummary;
+    destinations?: DestinationHierarchyDto[];
     durationDays: number;
     durationNights: number;
     startingPrice: number;
@@ -144,6 +152,25 @@ export function VariantCard({ variant }: VariantCardProps) {
           <h3 className="text-lg font-bold text-gray-900 mt-1 line-clamp-2 group-hover:text-blue-600 transition-colors">
             {variant.name}
           </h3>
+
+          {/* Destination Markers (Supports POI, Country, Sub-Continent, or Continent Anchoring) */}
+          {variant.destinations && variant.destinations.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2.5">
+              {variant.destinations.slice(0, 3).map((d, idx) => (
+                <span
+                  key={idx}
+                  className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1"
+                >
+                  📍 {d.poi || d.country || d.subContinent || d.continent}
+                </span>
+              ))}
+              {variant.destinations.length > 3 && (
+                <span className="text-[10px] text-slate-400 self-center">
+                  +{variant.destinations.length - 3} lainnya
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 3. Pricing & Call to Action */}

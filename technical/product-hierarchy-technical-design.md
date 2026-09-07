@@ -11,9 +11,9 @@
 | [Product Technical Design](./product-technical-design.md)      | **Complete DDL schema** (authoritative), per-table ERDs, Grand West Europe sample data         |
 | [Product Media](./product-media-technical-design.md)           | Media asset repository, polymorphic usages, presigned uploads, CDN delivery                   |
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL search query, indexing strategy                                      |
-| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), PostGIS spatial model     |
+| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), standard coordinate model |
 | [Contracts](../contracts/product-hierarchy-contract.md)        | All Tours listing feed, variant detail view API contracts                                     |
-| [Backend Guide](../backend/product-hierarchy-backend-guide.md)  | Duration COALESCE resolution, pessimistic booking lock (SELECT FOR UPDATE)                    |
+| [Backend Guide](../backend/product-hierarchy-backend-guide.md)  | Duration COALESCE resolution, catalog aggregation                                             |
 | [Frontend Guide](../frontend/product-hierarchy-frontend-guide.md)| All Tours catalog card, variant type badging, age-band pricing breakdown selector           |
 
 ---
@@ -82,44 +82,45 @@ products [prod_gwe_01]
 
 ## 🏗️ Engineering Principles
 
-### 1. Cascade Integrity
+### 1. Safe & Idempotent Catalog Lifecycle (No Hard Cascade Delete Required)
 
-All FK relationships use `ON DELETE CASCADE` downward through the hierarchy. Deleting a product auto-removes all its variants, their trips, and pricings in a single transactional operation.
+To preserve data integrity during catalog synchronization from ATW, entities are governed by `listing_status` (`ACTIVE`, `INACTIVE`, `ARCHIVED`) and soft-delete timestamps (`deleted_at`). Synchronization from ATW is non-destructive and idempotent. Deactivating or archiving at higher levels (e.g. archiving a master product `listing_status = 'ARCHIVED'`) automatically prevents child variants and trips from surfacing in search feeds without requiring destructive database drops (`DELETE CASCADE`).
 
 ### 2. Duration Inheritance
 
 `product_variants.duration_days / duration_nights` are **nullable**. `NULL` = inherit from `product_journeys`. Overrides are explicitly set on the variant row. Application layer must resolve using `COALESCE(pv.duration_days, pj.duration_days)`.
 
-### 3. Quota Concurrency & Age-Band Seat Allocation
+### 3. Read-Only Catalog Availability & Decoupled Concurrency Locking
 
-`product_trips.max_quota` represents the maximum bookable seat capacity. During booking:
-- Use **Pessimistic Locking** (`SELECT ... FOR UPDATE`) on the trip row to prevent overselling.
-- **Seat Allocation Rule:** Quota consumption is governed dynamically by `product_trip_pricings.consumes_quota` (`BOOLEAN NOT NULL DEFAULT TRUE`).
-  - For **`ADULT`**: Typically `consumes_quota = TRUE` (deducts 1 seat from available quota).
-  - For **`INFANT` (< 24 months)**: Configurable `BOOLEAN`. If the infant is allocated a dedicated seat on the flight/bus or an infant cot, `consumes_quota = TRUE`. If travelling as a lap infant without dedicated seat capacity, `consumes_quota = FALSE`.
-- Concurrency equation:
-  ```sql
-  required_seats = COUNT(*) FILTER (WHERE ptp.consumes_quota = TRUE)
-  ASSERT (current_booked_seats + required_seats <= trip.max_quota)
-  ```
+`product_trips.max_quota` and `product_trips.min_quota` represent nominal departure capacity limits surfaced to travelers on variant cards and PDP schedules:
+$$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
+- **Downstream Delegation:** Real-time pessimistic concurrency locks (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are strictly decoupled from the catalog domain and delegated downstream to Phase 3 (Booking & Checkout Domain).
+- **Seat Allocation Classification:** `product_trip_pricings.consumes_quota` (`BOOLEAN NOT NULL DEFAULT TRUE`) categorizes seat consumption for reporting and catalog display (`ADULT` = `TRUE`, `INFANT` = configurable).
 
-### 4. Trip-Scoped Departures
+### 4. Decoupled PostGIS & Pure Relational Multi-Tier Geography
+
+- **No PostGIS / Spatial Types:** Spatial geometry extensions (`postgis`), geometry types (`GEOMETRY`), and spatial queries (`ST_Contains`, `ST_Within`) are omitted.
+- **Standard WGS-84 Coordinates:** Stored as `DOUBLE PRECISION` (`lat`, `lng`) on `product_locations` and `areas`.
+- **Pure Relational B-Tree Traversal:** Traversal relies on composite indexing `(parent_id, area_type_id, slug)`. Retains only standard extensions (`"uuid-ossp"`, `"pg_trgm"`).
+- **Multi-Tier Anchoring:** `product_locations.area_id` anchors to any tier (`CONTINENT`, `SUB_CONTINENT`, `COUNTRY`, `POI`), resolved dynamically upwards to `CONTINENT` via SQL `CASE` joins.
+
+### 5. Trip-Scoped Departures
 
 `product_trips` are owned by a **variant**, not directly by a product. This allows different variants under the same product umbrella (e.g., "Spring" vs "Summer") to have entirely independent departure calendars, quotas, and pricing.
 
-### 5. Itinerary Ownership & Fallback (Variant Default → Trip Override)
+### 6. Itinerary Ownership & Fallback (Variant Default → Trip Override)
 
 Itineraries are decoupled from base products and anchored to variants:
 - **Variant Default (`trip_id IS NULL`):** Every variant maintains a standard master itinerary.
 - **Trip Override (`trip_id IS NOT NULL`):** Individual trips may override the master itinerary for date-specific variations (e.g. holiday parades, seasonal closures).
 - **Application Fallback:** `resolved_itinerary = trip.itinerary ?? variant.itinerary`.
 
-### 6. All-Inclusive Base Pricing & Excluded Add-on Architecture
+### 7. All-Inclusive Base Pricing & Excluded Add-on Architecture
 
 - **All-Inclusive Base Package Price:** The base selling price on `product_trip_pricings` represents the complete tour package (international flights, accommodations, transport, meals, tour guide, and entrance tickets). Textual inclusions and exclusions are documented transparently via `product_supplementaries` (`INCLUDED` and `EXCLUDED`).
 - **Excluded Add-ons (`product_addons`):** Configured at Variant level (and optionally supplemented at Trip level) for elective traveler upgrades that are **excluded** from the base price (Single Supplement, Hot Air Balloon, Extra Baggage). Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement base pricing during booking checkout.
 
-### 7. Polymorphic Target Resolution
+### 8. Polymorphic Target Resolution
 
 Media usages and supplementary content target entities via `(target_type, target_id)`:
 
@@ -555,11 +556,9 @@ product_variants
   → products              (parent product status check, product name filter)
     → product_categories  (Parent Category & Child Category filter)
   → product_journeys      (COALESCE duration fallback)
-  → product_locations     (destination markers)
-    → areas poi           (POI destination marker)
-    → areas country       (Country parent)
-    → areas sub_continent (Sub Continent parent)
-    → areas continent     (Continent root)
+  → product_locations     (destination markers anchored to POI, Country, Sub-Continent, or Continent)
+    → areas target_area   (anchored Area node at any tier)
+    → dynamic upward joins(resolves country, sub_continent, continent with flat nullable leaves)
   → product_trips         (date range + total pack / pax quota filter)
   → product_trip_pricings (filter ADULT price range [minPrice..maxPrice] + MIN starting price per card)
 ```
@@ -580,7 +579,7 @@ product_variants
 | `product_trips` → `product_itineraries`           | Hard FK           | 1 : 1       | `ON DELETE CASCADE` + `uq_itinerary_trip_override`         |
 | `product_itineraries` → `items`                   | Hard FK           | 1 : N       | `ON DELETE CASCADE` (`product_itinerary_items`)            |
 | `products` → `product_locations`                  | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
-| `areas` → `product_locations`                     | Logical FK        | 1 : N       | Inter-domain reference (POI destination marker)            |
+| `areas` → `product_locations`                     | Logical FK        | 1 : N       | Inter-domain reference (Flexible anchor: POI, Country, Sub-Continent, or Continent) |
 | `products` → `product_media`                      | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
 | `product_media` → `product_media_usages`          | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
 | `products` → `product_supplementaries`            | Hard FK           | 1 : N       | `ON DELETE CASCADE`                                        |
@@ -603,3 +602,6 @@ product_variants
 
 > [!NOTE]
 > **Audit Timestamps Standard:** All tables enforce `created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` and `updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`. Core catalog entities (`products`, `product_variants`, `areas`) also support soft deletes via nullable `deleted_at TIMESTAMP NULL`. Row mutations automatically update `updated_at` via PostgreSQL trigger function `set_updated_at_timestamp()`.
+
+> [!NOTE]
+> **Safe & Idempotent Catalog Lifecycle (No Hard Cascade Delete Required):** Catalog synchronization from ATW operates non-destructively and idempotently. Entities are managed via `listing_status` (`'ACTIVE'`, `'INACTIVE'`, `'ARCHIVED'`) and `deleted_at TIMESTAMP NULL`. Deactivating or archiving a master product (`listing_status = 'ARCHIVED'`) automatically excludes child variants and trips from public search feeds and storefront feeds without requiring destructive database cascading deletions (`DELETE CASCADE`).

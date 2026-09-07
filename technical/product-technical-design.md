@@ -13,7 +13,7 @@
 | [Product Hierarchy](./product-hierarchy-technical-design.md)   | 3-level hierarchy mental model, full-domain ERD, hierarchy sample data (GWE) |
 | [Product Media](./product-media-technical-design.md)           | Media asset repository, polymorphic usages, presigned uploads, CDN delivery  |
 | [Search & Filter](./product-search-filter-technical-design.md) | Search API contract, SQL query, indexing strategy                            |
-| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), PostGIS spatial model|
+| [Area Domain](./area-technical-design.md)                      | 4-tier geography tree (Continent → Sub Continent → Country → POI), standard coordinate model|
 | [SEO Architecture](./seo-technical-design.md)                  | SEO metadata, Schema.org rich snippets, Next.js dynamic metadata             |
 | [API Contracts](../contracts/README.md)                         | Complete REST API contracts, split sub-resources, request/response DTOs      |
 | [Backend Guide](../backend/product-backend-guide.md)            | NestJS ProductModule, services, transactions, and split endpoints             |
@@ -39,15 +39,27 @@ Media usages and supplementary content use `(target_type, target_id)` to target 
 - **App-level:** NestJS service layer is responsible for cascading deletes to polymorphic child rows inside a **database transaction** — no database FK can enforce this.
 - **Valid `target_type` values:** `PRODUCT` · `VARIANT` · `TRIP` · `ITINERARY_ITEM`
 
-### 4. Concurrency & Quota Management
+### 4. Catalog Quota & Nominal Availability (Decoupled Concurrency Locking)
 
-`product_trips.max_quota` is an **immutable ceiling** set at product configuration time. During booking, use **Pessimistic Locking** (`SELECT ... FOR UPDATE`) on the trip row to prevent race conditions. Live availability is tracked in a separate `product_trip_bookings` table — never mutate `max_quota`.
+- **Read-Only Availability Representation:** `product_trips.max_quota` and `min_quota` serve as nominal departure capacity limits surfaced to travelers during catalog discovery and on PDP schedules:
+  $$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
+- **Downstream Delegation:** Transactional pessimistic concurrency locking (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are strictly decoupled from the catalog domain and delegated downstream to Phase 3 (Booking & Checkout Domain). Catalog endpoints provide instantaneous O(1) read-only metric evaluation.
 
-### 5. Precision Economics
+### 5. Safe & Idempotent Catalog Lifecycle (No Hard Cascade Delete Required)
+
+- **Non-Destructive Synchronization:** Catalog synchronization from ATW (All Tours Website) must be non-destructive and idempotent.
+- **State Machine & Soft Deletion:** Entities are governed by `listing_status` (`'ACTIVE'`, `'INACTIVE'`, `'ARCHIVED'`) and soft-delete timestamps (`deleted_at TIMESTAMP NULL`).
+- **Cascade Independence:** Archiving or deactivating a master product (`listing_status = 'ARCHIVED'`) automatically excludes child variants and trips from public search feeds without requiring destructive database drops (`DELETE CASCADE`).
+
+### 6. Standard Coordinates & Decoupled Spatial Geometry (WGS-84)
+
+The platform eliminates all PostGIS extensions, spatial geometry types (`GEOMETRY`), GiST indexes, and spatial query operators (`ST_Contains`, `ST_Within`). Coordinates are modeled as standard float columns (`lat DOUBLE PRECISION`, `lng DOUBLE PRECISION`) on `product_locations` and `areas`. Relational hierarchy traversal relies on standard B-Tree indexing. Only `"uuid-ossp"` and `"pg_trgm"` are retained.
+
+### 7. Precision Economics
 
 All price columns use `DECIMAL(15,2)`. Never use `FLOAT` or `DOUBLE` for monetary values. Use `decimal.js` or `big.js` in NestJS for all arithmetic before returning to clients.
 
-### 6. Media Lifecycle & Validation (Images & Videos)
+### 8. Media Lifecycle & Validation (Images & Videos)
 
 `product_media` serves as the centralized repository for marketing visual assets: images and videos.
 
@@ -56,14 +68,14 @@ All price columns use `DECIMAL(15,2)`. Never use `FLOAT` or `DOUBLE` for monetar
 - **Client Cache Optimization:** Media records store `file_name` and `file_size_bytes` so UI clients can display responsive image sets. Binary streaming headers use immutable 1-year browser caching (`Cache-Control: public, max-age=31536000, immutable`).
 - **Tour Itinerary PDF Brochure (External ATW Generation):** Official tour brochure PDFs are generated and hosted externally by **ATW**. Hobiholidays does not process, upload, or store PDF binaries in `product_media`. Instead, `products.itinerary_pdf_url` (default) and `product_variants.itinerary_pdf_url` (variant edition override) store the external ATW brochure URL directly for instant O(1) reads resolved via `COALESCE(v.itinerary_pdf_url, p.itinerary_pdf_url)`.
 
-### 7. Audit Timestamps & State Traceability (`created_at`, `updated_at`, `deleted_at`)
+### 9. Audit Timestamps & State Traceability (`created_at`, `updated_at`, `deleted_at`)
 
 Every domain table strictly maintains timestamp tracking for auditability, cache invalidation, and data synchronization:
 
 - **`created_at` & `updated_at`:** Every table enforces `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`. A database trigger function (`set_updated_at_timestamp()`) automatically updates `updated_at` on row mutation to prevent stale data even during direct SQL operations.
 - **Soft Deletes (`deleted_at`):** High-value catalog entities (`products`, `product_variants`) use nullable `deleted_at` timestamps instead of physical deletion. Partial indexes explicitly exclude soft-deleted rows (`WHERE deleted_at IS NULL`) to maintain query performance.
 
-### 8. Catalog Lifecycle State Machine & Classification Enums
+### 10. Catalog Lifecycle State Machine & Classification Enums
 
 All entity lifecycles, audience classifications, and category tiers are enforced strictly via database-level `CHECK` constraints:
 
@@ -391,13 +403,14 @@ CREATE INDEX idx_itinerary_items_poi          ON product_itinerary_items(poi_are
 -- =========================================================================
 -- 5. CONTENT — Locations
 -- Multiple destination markers per product. area_id is a logical FK to the
--- Area/Geography domain (not enforced at DB level across domains).
+-- Area/Geography domain (anchored to any tier: POI, COUNTRY, SUB_CONTINENT, or CONTINENT).
+-- Leaf tiers below the linked anchor evaluate to NULL in flat DTO responses.
 -- =========================================================================
 CREATE TABLE product_locations (
     id          UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
     product_id  UUID           NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     source_type VARCHAR(50)    NOT NULL,                   -- AREA | MANUAL
-    area_id     UUID           NOT NULL,                   -- Logical FK → Area domain
+    area_id     UUID           NOT NULL,                   -- Logical FK → areas.id (POI, COUNTRY, SUB_CONTINENT, or CONTINENT)
     area_name   VARCHAR(100),                              -- Denormalized for fast UI rendering
     lat         DOUBLE PRECISION,
     lng         DOUBLE PRECISION,
@@ -752,19 +765,19 @@ erDiagram
 ```mermaid
 erDiagram
     areas {
-        uuid      id             PK "Area Domain (POI level)"
+        uuid      id             PK "Area Domain (any tier: POI, Country, Sub-Continent, Continent)"
         uuid      parent_id      FK "Continent -> Sub Continent -> Country -> POI"
         int       area_type_id   FK
-        varchar   name           "e.g. Eiffel Tower, Keukenhof, Mount Titlis"
+        varchar   name           "e.g. Eiffel Tower, Netherlands, Western Europe"
         varchar   code
     }
 
     product_locations {
         uuid      id          PK
         uuid      product_id  FK
-        varchar   source_type
-        uuid      area_id     FK "logical FK → areas.id (POI or Country)"
-        varchar   area_name   "denormalized landmark/country"
+        varchar   source_type "AREA | MANUAL"
+        uuid      area_id     FK "logical FK → areas.id (POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
+        varchar   area_name   "denormalized landmark/region name"
         float     lat
         float     lng
         text      address
@@ -772,14 +785,15 @@ erDiagram
     }
 
     products ||--o{ product_locations : "product_id"
-    areas    ||--o{ product_locations : "area_id (POI marker)"
+    areas    ||--o{ product_locations : "area_id (Flexible anchor: POI, Country, or Sub-Continent)"
 ```
 
-| Table               | id     | product_id     | source_type | area_id                              | area_name               | lat     | lng     | address                                                     | sort_order |
-| ------------------- | ------ | -------------- | ----------- | ------------------------------------ | ----------------------- | ------- | ------- | ----------------------------------------------------------- | ---------- |
-| `product_locations` | loc_01 | prod_gwe_01    | AREA        | 550e8400-e29b-41d4-a716-446655440001 | Keukenhof Gardens       | 52.2700 | 4.5464  | Stationsweg 166A, 2161 AM Lisse, Netherlands                | 1          |
-| `product_locations` | loc_02 | prod_gwe_01    | AREA        | 550e8400-e29b-41d4-a716-446655440002 | Eiffel Tower Paris      | 48.8584 | 2.2945  | Champ de Mars, 5 Av. Anatole France, 75007 Paris, France    | 2          |
-| `product_locations` | loc_03 | prod_gwe_01    | AREA        | 550e8400-e29b-41d4-a716-446655440003 | Mount Titlis Engelberg  | 46.7728 | 8.4378  | Gerschnistrasse 12, 6390 Engelberg, Switzerland             | 3          |
+| Table | id | product_id | source_type | area_id | area_name | Anchored Level | Resolved Upward Flat Hierarchy | sort_order |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `product_locations` | loc_01 | prod_gwe_01 | AREA | 550e8400-e29b-41d4-a716-446655440001 | Keukenhof Gardens | **POI** (Tier 4) | `continent: Europe, subContinent: Western Europe, country: Netherlands, poi: Keukenhof Gardens` | 1 |
+| `product_locations` | loc_02 | prod_gwe_01 | AREA | 550e8400-e29b-41d4-a716-446655440002 | Eiffel Tower Paris | **POI** (Tier 4) | `continent: Europe, subContinent: Western Europe, country: France, poi: Eiffel Tower Paris` | 2 |
+| `product_locations` | loc_03 | prod_jp_01 | AREA | 550e8400-e29b-41d4-a716-446655440010 | Japan | **COUNTRY** (Tier 3) | `continent: Asia, subContinent: East Asia, country: Japan, poi: NULL` | 1 |
+| `product_locations` | loc_04 | prod_nordic_01 | AREA | 550e8400-e29b-41d4-a716-446655440020 | Scandinavia & Nordics | **SUB_CONTINENT** (Tier 2) | `continent: Europe, subContinent: Northern Europe, country: NULL, poi: NULL` | 1 |
 
 ---
 
@@ -941,7 +955,7 @@ flowchart LR
 | `idx_itinerary_items_itinerary_id`      | `product_itinerary_items` | `(itinerary_id)`                                                                                 | B-Tree                | Itinerary item lookup by itinerary                  |
 | `idx_itinerary_items_poi`               | `product_itinerary_items` | `(poi_area_id)`                                                                                  | B-Tree                | Itinerary item POI landmark join                    |
 | `idx_locations_product_id`              | `product_locations`       | `(product_id)`                                                                                   | B-Tree                | Location lookup by product                          |
-| `idx_locations_area_id`                 | `product_locations`       | `(area_id)`                                                                                      | B-Tree                | Join to Area hierarchy (POI -> Country -> Sub Cont -> Contin) |
+| `idx_locations_area_id`                 | `product_locations`       | `(area_id)`                                                                                      | B-Tree                | Join to Area hierarchy (anchored to POI, Country, Sub-Continent, or Continent) |
 | `idx_locations_area_name_trgm`          | `product_locations`       | `(area_name)`                                                                                    | GIN pg_trgm           | Destination text search                             |
 | `idx_media_product_id`                  | `product_media`           | `(product_id)`                                                                                   | B-Tree                | Media lookup by product                             |
 | `idx_media_type`                        | `product_media`           | `(media_type)`                                                                                   | B-Tree                | Filter media by visual type (IMAGE / VIDEO)         |

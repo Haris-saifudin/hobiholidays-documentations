@@ -6,10 +6,12 @@
 > **Core Architectural Principles:**
 > - **Slug-Based Path Identification:** All master products (`/api/v1/products/:slug`) and bookable tour variants (`/api/v1/variants/:slug`) use indexed, human-readable natural slugs as their primary URL path parameters.
 > - **Category Taxonomy:** 2-tier parent-child category tree (`product_categories`) linked to Products.
+> - **Flexible Flat Geography (No PostGIS):** `product_locations.area_id` anchors to ANY level in the 4-tier geography tree (`CONTINENT`, `SUB_CONTINENT`, `COUNTRY`, `POI`). Returns flat nullable structures with standard WGS-84 float coordinates (`lat`, `lng`). PostGIS and spatial types are eliminated.
+> - **Read-Only Nominal Availability (Decoupled Concurrency Locking):** Catalog endpoints surface nominal available seat capacity ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$). Concurrency locking and transactional quota allocation are delegated downstream to Phase 3 (Booking Domain).
+> - **Safe & Idempotent Catalog Lifecycle:** ATW catalog synchronization is non-destructive and governed by `listing_status` and `deleted_at` timestamps without hard cascading drops.
 > - **Itinerary Hierarchy:** Owned at **Variant level (L2)** as default master itinerary, with optional override at **Trip level (L3)**.
-> - **Pricing & Add-on Architecture:** Base price is all-inclusive, scoped by age band (`ADULT`, `INFANT`) with dynamic `consumes_quota` boolean flag (infants may consume quota if seat is allocated). Excluded optional extras are modeled via `product_addons`.
-> - **Add-on Subsystem:** Full-price package base model with optional add-ons (`product_addons`) linked to Variants and optional Trip overrides.
-> - **Itinerary PDF Brochure:** Generated externally by ATW. Endpoints store and return the CDN/ATW URL (`itineraryPdfUrl`), with Variant override falling back to Base Product.
+> - **Pricing & Add-on Architecture:** Base price is all-inclusive, scoped by age band (`ADULT`, `INFANT`) with dynamic `consumes_quota` boolean flag. Excluded optional extras are modeled via `product_addons`.
+> - **Itinerary PDF Brochure:** Generated externally by ATW. Endpoints store and return the external brochure URL (`itineraryPdfUrl`), with Variant override falling back to Base Product.
 >
 > **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)  
 > **Backend Guide:** [Product Backend Guide](../backend/product-backend-guide.md)  
@@ -385,7 +387,7 @@ export class UpdateProductDto {
 ## 3. Split Sub-Resource Endpoints
 
 ### 3.1 Get Product Locations (`GET /api/v1/products/:slug/locations`)
-Returns destination markers linked to the 4-tier Area domain (**Continent → Sub Continent → Country → POI**).
+Returns destination markers linked to the Area domain with dynamic upward resolution (**Continent → Sub Continent → Country → POI**). Leaf tiers below the anchored level evaluate to `null`.
 
 #### Success Response (200 OK)
 ```json
@@ -404,6 +406,18 @@ Returns destination markers linked to the 4-tier Area domain (**Continent → Su
       "lat": 52.2698,
       "lng": 4.5469,
       "sortOrder": 1
+    },
+    {
+      "locationId": "550e8400-e29b-41d4-a716-446655440082",
+      "areaId": "550e8400-e29b-41d4-a716-446655440015",
+      "poi": null,
+      "country": "Japan",
+      "countryCode": "JP",
+      "subContinent": "East Asia",
+      "continent": "Asia",
+      "lat": 36.2048,
+      "lng": 138.2529,
+      "sortOrder": 2
     }
   ]
 }
@@ -417,7 +431,7 @@ import { IsUUID, IsOptional, IsInt, Min, IsNumber } from 'class-validator';
 
 export class AttachProductLocationDto {
   @IsUUID('4')
-  areaId: string; // POI or Country Area UUID
+  areaId: string; // Area UUID (anchored to POI, Country, Sub-Continent, or Continent)
 
   @IsOptional()
   @IsNumber()
@@ -440,11 +454,11 @@ export class AttachProductLocationDto {
   "statusCode": 201,
   "message": "Product location marker attached successfully",
   "data": {
-    "locationId": "550e8400-e29b-41d4-a716-446655440082",
+    "locationId": "550e8400-e29b-41d4-a716-446655440083",
     "productSlug": "grand-west-europe",
     "areaId": "550e8400-e29b-41d4-a716-446655440011",
     "poi": "Eiffel Tower",
-    "sortOrder": 2
+    "sortOrder": 3
   }
 }
 ```

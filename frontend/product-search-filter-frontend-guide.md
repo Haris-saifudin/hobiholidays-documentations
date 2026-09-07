@@ -294,4 +294,59 @@ export function FilterSidebar() {
     </aside>
   );
 }
+
+---
+
+## 🏷️ Active Filter Chips Component
+
+Renders active search parameters and multi-tier destination filter badges with graceful fallback rendering:
+
+```tsx
+// components/search/active-chips.tsx
+'use client';
+
+import { useSearchFilters } from '@/hooks/use-search-filters';
+
+export interface ActiveChipsProps {
+  destinationLabel?: string;
+}
+
+export function ActiveFilterChips({ destinationLabel }: ActiveChipsProps) {
+  const { filters, setFilter, clearAllFilters } = useSearchFilters();
+
+  const activeFilters = [
+    filters.continentSlug && { key: 'continentSlug', label: destinationLabel || `Benua: ${filters.continentSlug}` },
+    filters.subContinentSlug && { key: 'subContinentSlug', label: destinationLabel || `Kawasan: ${filters.subContinentSlug}` },
+    filters.countrySlug && { key: 'countrySlug', label: destinationLabel || `Negara: ${filters.countrySlug}` },
+    filters.poiSlug && { key: 'poiSlug', label: destinationLabel || `POI: ${filters.poiSlug}` },
+    filters.categorySlug && { key: 'categorySlug', label: `Kategori: ${filters.categorySlug}` },
+    filters.variantType && { key: 'variantType', label: `Tipe: ${filters.variantType}` },
+    filters.departureMonth && { key: 'departureMonth', label: `Bulan: ${filters.departureMonth}` },
+    filters.totalPack && { key: 'totalPack', label: `${filters.totalPack} Pax` },
+  ].filter(Boolean) as { key: string; label: string }[];
+
+  if (activeFilters.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 py-3">
+      <span className="text-xs text-gray-400 font-medium">Filter Aktif:</span>
+      {activeFilters.map((chip) => (
+        <button
+          key={chip.key}
+          onClick={() => setFilter(chip.key, null)}
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
+        >
+          <span>{chip.label}</span>
+          <span className="text-blue-400 hover:text-blue-800">✕</span>
+        </button>
+      ))}
+      <button
+        onClick={clearAllFilters}
+        className="text-xs text-red-600 hover:underline font-medium ml-2"
+      >
+        Hapus Semua
+      </button>
+    </div>
+  );
+}
 ```

@@ -73,18 +73,18 @@ export class SearchSqlBuilderService {
       idx++;
     }
 
-    // 2. Geographic Filters (4-tier Area hierarchy: POI -> Country -> Sub-Continent -> Continent)
+    // 2. Geographic Filters (Flexible Flat Anchoring: POI -> Country -> Sub-Continent -> Continent)
     const continent = dto.continentSlug || dto.continentId;
     if (continent) {
       conditions.push(`
         EXISTS (
           SELECT 1 FROM product_locations pl
-          INNER JOIN areas poi ON poi.id = pl.area_id
-          INNER JOIN areas country ON country.id = poi.parent_id
-          INNER JOIN areas sub ON sub.id = country.parent_id
-          INNER JOIN areas cont ON cont.id = sub.parent_id
+          INNER JOIN areas target_area ON target_area.id = pl.area_id
+          LEFT JOIN areas country_area ON country_area.id = CASE WHEN target_area.area_type_id = 4 THEN target_area.parent_id WHEN target_area.area_type_id = 3 THEN target_area.id ELSE NULL END
+          LEFT JOIN areas subcont_area ON subcont_area.id = CASE WHEN target_area.area_type_id = 4 THEN country_area.parent_id WHEN target_area.area_type_id = 3 THEN target_area.parent_id WHEN target_area.area_type_id = 2 THEN target_area.id ELSE NULL END
+          LEFT JOIN areas continent_area ON continent_area.id = CASE WHEN target_area.area_type_id = 4 THEN subcont_area.parent_id WHEN target_area.area_type_id = 3 THEN subcont_area.parent_id WHEN target_area.area_type_id = 2 THEN target_area.parent_id WHEN target_area.area_type_id = 1 THEN target_area.id ELSE NULL END
           WHERE pl.product_id = p.id
-            AND (cont.id::text = $${idx} OR cont.slug = $${idx})
+            AND (continent_area.id::text = $${idx} OR continent_area.slug = $${idx})
         )
       `);
       values.push(continent);
@@ -96,11 +96,11 @@ export class SearchSqlBuilderService {
       conditions.push(`
         EXISTS (
           SELECT 1 FROM product_locations pl
-          INNER JOIN areas poi ON poi.id = pl.area_id
-          INNER JOIN areas country ON country.id = poi.parent_id
-          INNER JOIN areas sub ON sub.id = country.parent_id
+          INNER JOIN areas target_area ON target_area.id = pl.area_id
+          LEFT JOIN areas country_area ON country_area.id = CASE WHEN target_area.area_type_id = 4 THEN target_area.parent_id WHEN target_area.area_type_id = 3 THEN target_area.id ELSE NULL END
+          LEFT JOIN areas subcont_area ON subcont_area.id = CASE WHEN target_area.area_type_id = 4 THEN country_area.parent_id WHEN target_area.area_type_id = 3 THEN target_area.parent_id WHEN target_area.area_type_id = 2 THEN target_area.id ELSE NULL END
           WHERE pl.product_id = p.id
-            AND (sub.id::text = $${idx} OR sub.slug = $${idx})
+            AND (subcont_area.id::text = $${idx} OR subcont_area.slug = $${idx})
         )
       `);
       values.push(subContinent);
@@ -112,10 +112,10 @@ export class SearchSqlBuilderService {
       conditions.push(`
         EXISTS (
           SELECT 1 FROM product_locations pl
-          INNER JOIN areas poi ON poi.id = pl.area_id
-          INNER JOIN areas country ON country.id = poi.parent_id
+          INNER JOIN areas target_area ON target_area.id = pl.area_id
+          LEFT JOIN areas country_area ON country_area.id = CASE WHEN target_area.area_type_id = 4 THEN target_area.parent_id WHEN target_area.area_type_id = 3 THEN target_area.id ELSE NULL END
           WHERE pl.product_id = p.id
-            AND (country.id::text = $${idx} OR country.slug = $${idx})
+            AND (country_area.id::text = $${idx} OR country_area.slug = $${idx})
         )
       `);
       values.push(country);
@@ -127,7 +127,7 @@ export class SearchSqlBuilderService {
       conditions.push(`
         EXISTS (
           SELECT 1 FROM product_locations pl
-          INNER JOIN areas poi ON poi.id = pl.area_id
+          INNER JOIN areas poi ON poi.id = pl.area_id AND poi.area_type_id = 4
           WHERE pl.product_id = p.id
             AND (poi.id::text = $${idx} OR poi.slug = $${idx})
         )
@@ -251,6 +251,39 @@ export class SearchSqlBuilderService {
           ORDER BY (CASE WHEN pmu.target_type = 'VARIANT' THEN 1 ELSE 2 END) ASC
           LIMIT 1
         ) AS cover_image_url,
+        -- Dynamic upward destination aggregation (flat nullable leaf tiers):
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'continent', continent_area.name,
+              'subContinent', subcont_area.name,
+              'country', country_area.name,
+              'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END
+            ) ORDER BY pl.sort_order ASC)
+            FROM product_locations pl
+            INNER JOIN areas target_area ON target_area.id = pl.area_id
+            LEFT JOIN areas country_area ON country_area.id = CASE
+              WHEN target_area.area_type_id = 4 THEN target_area.parent_id
+              WHEN target_area.area_type_id = 3 THEN target_area.id
+              ELSE NULL
+            END
+            LEFT JOIN areas subcont_area ON subcont_area.id = CASE
+              WHEN target_area.area_type_id = 4 THEN country_area.parent_id
+              WHEN target_area.area_type_id = 3 THEN target_area.parent_id
+              WHEN target_area.area_type_id = 2 THEN target_area.id
+              ELSE NULL
+            END
+            LEFT JOIN areas continent_area ON continent_area.id = CASE
+              WHEN target_area.area_type_id = 4 THEN subcont_area.parent_id
+              WHEN target_area.area_type_id = 3 THEN subcont_area.parent_id
+              WHEN target_area.area_type_id = 2 THEN target_area.parent_id
+              WHEN target_area.area_type_id = 1 THEN target_area.id
+              ELSE NULL
+            END
+            WHERE pl.product_id = p.id
+          ),
+          '[]'::json
+        ) AS destinations,
         (
           SELECT MIN(ptp.selling_price)
           FROM product_trips pt

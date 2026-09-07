@@ -411,20 +411,37 @@ export class ProductService {
       SELECT
         pl.id AS location_id,
         pl.area_id,
-        poi.name AS poi,
-        country.name AS country,
-        country.code AS country_code,
-        sub.name AS sub_continent,
-        cont.name AS continent,
+        target_area.name AS target_area_name,
+        target_area.area_type_id,
+        CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END AS poi,
+        country_area.name AS country,
+        country_area.code AS country_code,
+        subcont_area.name AS sub_continent,
+        continent_area.name AS continent,
         pl.lat,
         pl.lng,
         pl.address,
         pl.sort_order
       FROM product_locations pl
-      LEFT JOIN areas poi ON poi.id = pl.area_id
-      LEFT JOIN areas country ON country.id = poi.parent_id
-      LEFT JOIN areas sub ON sub.id = country.parent_id
-      LEFT JOIN areas cont ON cont.id = sub.parent_id
+      INNER JOIN areas target_area ON target_area.id = pl.area_id
+      LEFT JOIN areas country_area ON country_area.id = CASE
+        WHEN target_area.area_type_id = 4 THEN target_area.parent_id
+        WHEN target_area.area_type_id = 3 THEN target_area.id
+        ELSE NULL
+      END
+      LEFT JOIN areas subcont_area ON subcont_area.id = CASE
+        WHEN target_area.area_type_id = 4 THEN country_area.parent_id
+        WHEN target_area.area_type_id = 3 THEN target_area.parent_id
+        WHEN target_area.area_type_id = 2 THEN target_area.id
+        ELSE NULL
+      END
+      LEFT JOIN areas continent_area ON continent_area.id = CASE
+        WHEN target_area.area_type_id = 4 THEN subcont_area.parent_id
+        WHEN target_area.area_type_id = 3 THEN subcont_area.parent_id
+        WHEN target_area.area_type_id = 2 THEN target_area.parent_id
+        WHEN target_area.area_type_id = 1 THEN target_area.id
+        ELSE NULL
+      END
       WHERE pl.product_id = $1
       ORDER BY pl.sort_order ASC
     `, [product.id]);
@@ -432,6 +449,8 @@ export class ProductService {
     return rows.map((r: any) => ({
       locationId: r.location_id,
       areaId: r.area_id,
+      targetAreaName: r.target_area_name,
+      areaTypeId: r.area_type_id,
       poi: r.poi,
       country: r.country,
       countryCode: r.country_code,

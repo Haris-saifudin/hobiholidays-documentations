@@ -174,6 +174,42 @@ export class ListVariantsDto {
       "currency": "IDR",
       "nextDepartureDate": "2026-05-02",
       "totalActiveDepartures": 2
+    },
+    {
+      "variantId": "550e8400-e29b-41d4-a716-446655440022",
+      "code": "JP-AUT-2026",
+      "name": "Japan Autumn Discovery",
+      "slug": "japan-autumn-discovery",
+      "variantType": "SEASONAL",
+      "badges": [],
+      "productId": "550e8400-e29b-41d4-a716-446655440015",
+      "productName": "Japan Highlights Tour",
+      "productSlug": "japan-highlights",
+      "category": {
+        "id": "550e8400-e29b-41d4-a716-446655440081",
+        "name": "Classic Series",
+        "slug": "classic-series"
+      },
+      "parentCategory": {
+        "id": "550e8400-e29b-41d4-a716-446655440080",
+        "name": "Tour Series",
+        "slug": "tour-series"
+      },
+      "durationDays": 7,
+      "durationNights": 6,
+      "coverUrl": "https://cdn.hobiholidays.com/products/japan/tokyo-fuji.jpg",
+      "destinations": [
+        {
+          "continent": "Asia",
+          "subContinent": "East Asia",
+          "country": "Japan",
+          "poi": null
+        }
+      ],
+      "startingPrice": 22500000.00,
+      "currency": "IDR",
+      "nextDepartureDate": "2026-10-15",
+      "totalActiveDepartures": 3
     }
   ]
 }
@@ -416,12 +452,14 @@ export interface VariantCardCategoryDto {
   slug: string;
 }
 
-export interface VariantCardDestinationDto {
-  poi: string;
-  country: string;
-  subContinent: string;
-  continent: string;
+export interface DestinationHierarchyDto {
+  continent: string;              // Always resolved (Root)
+  subContinent?: string | null;   // Null when anchored directly to CONTINENT
+  country?: string | null;        // Null when anchored to CONTINENT or SUB_CONTINENT
+  poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
 }
+
+export type VariantCardDestinationDto = DestinationHierarchyDto;
 
 export interface VariantCardDto {
   variantId: string;

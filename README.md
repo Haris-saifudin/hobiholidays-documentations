@@ -16,8 +16,8 @@ hobiholidays-documentations/
 ├── technical/                             # PILLAR 1: Pure Technical Architecture & Data Models
 │   ├── README.md                          # Technical standards, PostgreSQL DDL conventions, ERDs
 │   ├── product-technical-design.md        # Authoritative PostgreSQL DDL, core ERD, audit triggers
-│   ├── product-hierarchy-technical-design.md # 3-Level hierarchy mental model, cascade rules, quota
-│   ├── area-technical-design.md           # 4-Tier geography tree (Continent → Sub Continent → Country → POI), PostGIS
+│   ├── product-hierarchy-technical-design.md # 3-Level hierarchy mental model, lifecycle rules, availability
+│   ├── area-technical-design.md           # 4-Tier geography tree (Continent → Sub Continent → Country → POI), flexible flat anchoring
 │   ├── product-search-filter-technical-design.md # SQL join mechanics, trigram GIN, window functions
 │   ├── product-media-technical-design.md  # 2-Phase storage architecture, binary blobs, 1:1 PDF
 │   └── seo-technical-design.md            # Polymorphic SEO schema, formula matrix, rich snippets
@@ -34,8 +34,8 @@ hobiholidays-documentations/
 ├── backend/                               # PILLAR 3: NestJS Backend Implementation Guides
 │   ├── README.md                          # NestJS architecture, module graph, filters, interceptors
 │   ├── product-backend-guide.md           # ProductModule, split sub-resource service architecture
-│   ├── product-hierarchy-backend-guide.md # Duration inheritance COALESCE, pessimistic booking lock
-│   ├── area-backend-guide.md              # Recursive CTE traversal query, PostGIS lookup, cache
+│   ├── product-hierarchy-backend-guide.md # Duration inheritance COALESCE, nominal seat availability
+│   ├── area-backend-guide.md              # Recursive CTE traversal query, WGS-84 coordinates, cache
 │   ├── product-search-filter-backend-guide.md # Dynamic SQL builder, trigram search, offset pagination
 │   ├── product-media-backend-guide.md     # Multer BYTEA streaming controller, S3 migration script
 │   └── seo-backend-guide.md               # Dynamic fallback resolver service, JSON-LD generator
@@ -74,11 +74,11 @@ The platform engineering lifecycle is organized into structured development phas
 
 ### Phase 1: Core Catalog, Discovery & SEO (Current Scope — Authoritative & Complete)
 The documentation in this repository currently defines the complete, authoritative specification for **Phase 1**:
-- **Product Core & Master Catalog:** Master brand umbrella (`products`), 2-tier Category taxonomy, journey durations, destination markers, and supplementary inclusions.
-- **Product Hierarchy:** 3-Level hierarchy (`Product → Variant → Trip → Pricing`), duration inheritance (`COALESCE`), pessimistic locking (`SELECT FOR UPDATE`), relational promotional badges (`product_badges`), and itemized cost breakdown components (`product_pricing_components`).
-- **Area & Geography:** 4-Tier geographic taxonomy (`Continent → Sub Continent → Country → POI`), PostGIS spatial coordinates, recursive CTE tree traversal, and "Where To?" autocomplete.
-- **Search & Dynamic Discovery:** Trigram fuzzy matching (`pg_trgm`), windowed total counts (`COUNT(*) OVER()`), and dynamic active-only filter options aggregation (`/api/v1/variants/search/filter-options`).
-- **Media Subsystem:** 2-Phase progressive storage (Database BYTEA binary blobs for zero-dependency local dev vs Cloud AWS S3/Cloudflare R2 presigned URLs).
+- **Product Core & Master Catalog:** Master brand umbrella (`products`), 2-tier Category taxonomy, journey durations, destination markers, and supplementary inclusions. Catalog synchronization from ATW is non-destructive and idempotent, governed by `listing_status` (`'ACTIVE'`, `'INACTIVE'`, `'ARCHIVED'`) and `deleted_at` timestamps without hard cascading drops (`DELETE CASCADE`).
+- **Product Hierarchy & Nominal Availability:** 3-Level hierarchy (`Product → Variant → Trip → Pricing`), duration inheritance (`COALESCE`), nominal read-only seat availability ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$), relational promotional badges (`product_badges`), and itemized cost breakdown components (`product_pricing_components`). Transactional pessimistic locking (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are strictly decoupled and delegated downstream to Phase 3.
+- **Area & Geography (Decoupled PostGIS):** 4-Tier geographic taxonomy (`Continent → Sub Continent → Country → POI`), standard WGS-84 float coordinates (`lat`, `lng` as `DOUBLE PRECISION`), pure relational B-Tree indexing on `(parent_id, area_type_id, slug)`, flexible flat anchoring (POI, Country, Sub-Continent, Continent), dynamic upward `CASE` hierarchy traversal, and "Where To?" autocomplete. Standard extensions only (`"uuid-ossp"`, `"pg_trgm"`).
+- **Search & Dynamic Discovery:** Dynamic upward Area traversal, Trigram fuzzy matching (`pg_trgm`), windowed total counts (`COUNT(*) OVER()`), and dynamic active-only filter options aggregation (`/api/v1/variants/search/filter-options`).
+- **Media Subsystem:** 2-Phase progressive storage (Database BYTEA binary blobs for zero-dependency local dev vs Cloud AWS S3/Cloudflare R2 presigned URLs). Official tour brochure PDFs are generated externally by ATW and referenced directly via `itinerary_pdf_url`.
 - **SEO & Rich Snippets:** Polymorphic SEO schema (`seo_metadata`), programmatic dynamic fallbacks, Google Rich Results (Schema.org `TouristTrip` & `Offer`), dynamic sitemaps, and robots.txt.
 
 ---
@@ -88,7 +88,7 @@ The following e-commerce domains are intentionally scheduled for subsequent phas
 - **Phase 2: Authentication, Authorization & User Management**
   - AWS Cognito User Pool integration, custom password API endpoints, better-auth session cookies, and RBAC guards (`CUSTOMER`, `AGENT`, `ADMIN`).
 - **Phase 3: Booking & Reservation Engine**
-  - Booking drafts (`POST /api/v1/bookings/draft`), dynamic checkout forms, lead passenger & companion validation, dynamic questions, and pessimistic quota reservation TTL.
+  - Booking drafts (`POST /api/v1/bookings/draft`), dynamic checkout forms, lead passenger & companion validation, dynamic questions, and transactional quota reservation TTL.
 - **Phase 4: Payments & Transaction Processing**
   - Payment gateway adapters (Duitku, Midtrans, Xendit), QRIS dynamic image generation & countdown, Virtual Accounts, webhook HMAC verification, and payment status synchronization.
 - **Phase 5: Customer Portal, Ancillaries & Community**
@@ -103,14 +103,14 @@ Choose your entry point based on your engineering discipline:
 ### 1. For Solutions Architects & Database Administrators (DBAs)
 1. Start with **[Technical Architecture README](./technical/README.md)** for global DDL conventions, trigger strategies, and data modeling standards.
 2. Review the **[Product Technical Design](./technical/product-technical-design.md)** for the authoritative PostgreSQL DDL schemas.
-3. Understand the **[Product Hierarchy Technical Design](./technical/product-hierarchy-technical-design.md)** for cascade integrity and quota concurrency models.
+3. Understand the **[Product Hierarchy Technical Design](./technical/product-hierarchy-technical-design.md)** for lifecycle management and quota models.
 
 ### 2. For Backend & API Platform Engineers
 1. Read the **[Backend README](./backend/README.md)** for NestJS modular structure, validation pipes, and RFC 7807 error handling.
 2. Review the **[Contracts README](./contracts/README.md)** for global endpoint standards and pagination envelopes.
 3. Dive into the domain-specific backend guides:
    - **[Product Backend Guide](./backend/product-backend-guide.md)** — Split sub-resource architecture.
-   - **[Hierarchy Backend Guide](./backend/product-hierarchy-backend-guide.md)** — Duration `COALESCE` and pessimistic booking lock (`SELECT FOR UPDATE`).
+   - **[Hierarchy Backend Guide](./backend/product-hierarchy-backend-guide.md)** — Duration `COALESCE` and nominal seat availability calculation.
    - **[Media Backend Guide](./backend/product-media-backend-guide.md)** — Database streaming and AWS S3 presigned uploads.
 
 ### 3. For Frontend & UI/UX Engineers
@@ -131,7 +131,7 @@ Choose your entry point based on your engineering discipline:
 ## 💻 Technology Stack Summary
 
 - **Backend Framework:** NestJS (Node.js / TypeScript)
-- **Database Engine:** PostgreSQL 16+ with extensions (`uuid-ossp`, `pg_trgm`, `postgis`)
+- **Database Engine:** PostgreSQL 16+ with extensions (`uuid-ossp`, `pg_trgm`)
 - **Query & ORM Layer:** TypeORM / Kysely
 - **Frontend Framework:** Next.js 15+ (App Router, Server Components, SSR/SSG/ISR)
 - **Image Optimization:** Next.js Image Component (`next/image`) with WebP/AVIF auto-negotiation

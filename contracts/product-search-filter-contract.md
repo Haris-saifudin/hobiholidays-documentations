@@ -159,12 +159,14 @@ export class SearchTripDto {
 
 ```typescript
 // search-trip-response.interface.ts
-export interface DestinationHierarchy {
-  continent: string;
-  subContinent?: string;
-  country: string;
-  poi?: string;
+export interface DestinationHierarchyDto {
+  continent: string;              // Always resolved (Root)
+  subContinent?: string | null;   // Null when anchored directly to CONTINENT
+  country?: string | null;        // Null when anchored to CONTINENT or SUB_CONTINENT
+  poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
 }
+
+export type DestinationHierarchy = DestinationHierarchyDto;
 
 export interface CategorySummary {
   id: string;

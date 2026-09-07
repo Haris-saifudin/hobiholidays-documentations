@@ -35,10 +35,10 @@ The All Tours catalog and search widget expose multiple independent and combinab
 | **Product / Variant Name** | `productName` | `products.name` / `product_variants.name` | Trigram / `ILIKE` partial text search matching either the parent product title (L1) or variant title (L2). |
 | **Parent Category** | `parentCategorySlug` | `parent_cat.slug` | Filter by top-level tour theme (e.g. *Travel Style*, *Special Interest*). |
 | **Child Category** | `categorySlug` | `child_cat.slug` | Filter by specific sub-category (e.g. *Cultural & Heritage*, *Family Leisure*). |
-| **Continent Filter** | `continentSlug` / `continentId` | `continent_area.slug` / `continent_area.id` | Filter through Area hierarchy (`pl.area_id → poi.parent_id (Country) → sub_continent.parent_id = continent.id`). |
-| **Sub Continent Filter** | `subContinentSlug` / `subContinentId` | `subcont_area.slug` / `subcont_area.id` | Filter through Area hierarchy (`pl.area_id → poi.parent_id = country.parent_id = sub_continent.id`). |
-| **Country Filter** | `countrySlug` / `countryId` | `country_area.slug` / `country_area.id` | Filter through Area hierarchy (`pl.area_id → poi.parent_id = country.id`). |
-| **POI / Attraction** | `poiSlug` / `poiId` | `poi_area.slug` / `poi_area.id` | Filter by Point of Interest landmark (e.g. *Keukenhof*, *Eiffel Tower*). |
+| **Continent Filter** | `continentSlug` / `continentId` | `continent_area.slug` / `continent_area.id` | Dynamic upward resolution (`target_area -> country -> sub_continent -> continent`). Matches products anchored at Continent, Sub-Continent, Country, or POI. |
+| **Sub Continent Filter** | `subContinentSlug` / `subContinentId` | `subcont_area.slug` / `subcont_area.id` | Dynamic upward resolution (`target_area -> country -> sub_continent`). Matches products anchored at Sub-Continent, Country, or POI. |
+| **Country Filter** | `countrySlug` / `countryId` | `country_area.slug` / `country_area.id` | Dynamic upward resolution (`target_area -> country`). Matches products anchored at Country or POI. |
+| **POI / Attraction** | `poiSlug` / `poiId` | `target_area.slug` / `target_area.id` | Filter by Point of Interest landmark (where `target_area.area_type_id = 4`, e.g. *Keukenhof*, *Eiffel Tower*). |
 | **"Where To?" Destination** | `destination` | `continent_area.name`, `country_area.name`, `pl.area_name`, `products.slug` | Broad partial search across continental, country, POI destination names, and product slugs. |
 | **Departure Month** | `departureMonth` | `product_trips.start_date` | Date range query extracting all trips starting within the given month (`YYYY-MM`). |
 | **Total Pack / Pax** | `totalPack` (or `pax`) | `product_trips.min_quota` & `product_trips.max_quota` | Verifies the trip capacity can accommodate the party size (`pt.max_quota >= :totalPack AND pt.min_quota <= :totalPack`). |
@@ -165,10 +165,10 @@ export class SearchTripDto {
 ```typescript
 // search-trip-response.dto.ts
 export interface DestinationHierarchyDto {
-  continent: string;
-  subContinent?: string;
-  country: string;
-  poi?: string;
+  continent: string;              // Always resolved (Root)
+  subContinent?: string | null;   // Null when anchored directly to CONTINENT
+  country?: string | null;        // Null when anchored to CONTINENT or SUB_CONTINENT
+  poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
 }
 
 export interface VariantCardDto {
@@ -227,12 +227,12 @@ SELECT
     child_cat.name                                  AS category_name,
     COALESCE(pv.duration_days, pj.duration_days)    AS duration_days,
     COALESCE(pv.duration_nights, pj.duration_nights)AS duration_nights,
-    -- Aggregated destinations with Continent -> Sub Continent -> Country -> POI hierarchy
+    -- Aggregated flat destinations with dynamic upward resolution & nullable leaves
     json_agg(DISTINCT jsonb_build_object(
         'continent', continent_area.name,
-        'sub_continent', subcont_area.name,
+        'subContinent', subcont_area.name,
         'country', country_area.name,
-        'poi', pl.area_name
+        'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END
     ))                                              AS destinations,
     json_agg(DISTINCT pt.start_date ORDER BY pt.start_date ASC) AS available_dates,
     MIN(ptp.selling_price)                          AS starting_price,
@@ -244,23 +244,26 @@ LEFT JOIN product_categories child_cat ON child_cat.id = p.category_id
 LEFT JOIN product_categories parent_cat ON parent_cat.id = COALESCE(p.parent_category_id, child_cat.parent_id)
 -- 2. Join Journey Metadata for duration fallback
 LEFT JOIN product_journeys pj ON pj.product_id = p.id
--- 3. Join Locations and 4-Tier Area Hierarchy (POI -> Country -> Sub Continent -> Continent)
+-- 3. Join Locations and Dynamic Upward Area Hierarchy (Anchored to POI, Country, Sub Continent, or Continent)
 INNER JOIN product_locations pl ON pl.product_id = p.id
-LEFT JOIN areas poi_area ON poi_area.id = pl.area_id
+LEFT JOIN areas target_area ON target_area.id = pl.area_id
 LEFT JOIN areas country_area ON country_area.id = CASE
-    WHEN poi_area.area_type_id = 4 THEN poi_area.parent_id
-    WHEN poi_area.area_type_id = 3 THEN poi_area.id
+    WHEN target_area.area_type_id = 4 THEN target_area.parent_id     -- If POI, parent is Country
+    WHEN target_area.area_type_id = 3 THEN target_area.id            -- If Country, itself
     ELSE NULL
 END
 LEFT JOIN areas subcont_area ON subcont_area.id = CASE
-    WHEN poi_area.area_type_id = 4 THEN country_area.parent_id
-    WHEN poi_area.area_type_id = 2 THEN poi_area.id
-    ELSE country_area.parent_id
+    WHEN target_area.area_type_id = 4 THEN country_area.parent_id    -- If POI, grandparent is Sub-Continent
+    WHEN target_area.area_type_id = 3 THEN target_area.parent_id     -- If Country, parent is Sub-Continent
+    WHEN target_area.area_type_id = 2 THEN target_area.id            -- If Sub-Continent, itself
+    ELSE NULL
 END
 LEFT JOIN areas continent_area ON continent_area.id = CASE
-    WHEN poi_area.area_type_id = 4 THEN subcont_area.parent_id
-    WHEN poi_area.area_type_id = 1 THEN poi_area.id
-    ELSE subcont_area.parent_id
+    WHEN target_area.area_type_id = 4 THEN subcont_area.parent_id    -- If POI, great-grandparent is Continent
+    WHEN target_area.area_type_id = 3 THEN subcont_area.parent_id    -- If Country, grandparent is Continent
+    WHEN target_area.area_type_id = 2 THEN target_area.parent_id     -- If Sub-Continent, parent is Continent
+    WHEN target_area.area_type_id = 1 THEN target_area.id            -- If Continent, itself
+    ELSE NULL
 END
 -- 4. Join Trips for Date and Total Pack / Quota
 INNER JOIN product_trips pt ON pt.variant_id = pv.id
@@ -305,6 +308,10 @@ WHERE
         :subContinentSlug IS NULL
         OR subcont_area.slug = :subContinentSlug
     )
+    AND (
+        :subContinentId IS NULL
+        OR subcont_area.id = :subContinentId
+    )
 
     -- [Filter 5: Country Filter] (optional)
     AND (
@@ -319,7 +326,11 @@ WHERE
     -- [Filter 6: POI Filter] (optional)
     AND (
         :poiSlug IS NULL
-        OR poi_area.slug = :poiSlug
+        OR (target_area.area_type_id = 4 AND target_area.slug = :poiSlug)
+    )
+    AND (
+        :poiId IS NULL
+        OR (target_area.area_type_id = 4 AND target_area.id = :poiId)
     )
 
     -- [Filter 7: "Where To?" Generic Destination] (optional)
@@ -614,6 +625,81 @@ WHERE
         "2026-05-02"
       ],
       "startingPrice": 31000000.00,
+      "currency": "IDR"
+    }
+  ]
+}
+```
+
+---
+
+### Scenario 4: Flexible Anchoring at Country & Sub-Continent Levels (Nullable Leaf Tiers)
+**User Action:** A traveler browses for **Asia** and **Europe** regional packages where tours are anchored at the **Country** level (e.g. *Japan Highlights* without granular POIs) or **Sub-Continent** level (e.g. *Nordic Winter Wonderland*).
+
+#### HTTP Request
+```http
+GET /api/v1/variants/search?continentSlug=asia&page=1&limit=10 HTTP/1.1
+Host: api.hobiholidays.com
+```
+
+#### JSON Response Payload (Flat Structure with Nullable Leaf Fields)
+```json
+{
+  "meta": {
+    "totalItems": 2,
+    "itemCount": 2,
+    "itemsPerPage": 10,
+    "totalPages": 1,
+    "currentPage": 1,
+    "totalPackages": 2
+  },
+  "data": [
+    {
+      "variantId": "550e8400-e29b-41d4-a716-446655440040",
+      "variantName": "Japan All-Inclusive Discovery",
+      "variantSlug": "japan-all-inclusive-discovery",
+      "variantType": "STANDARD",
+      "productId": "550e8400-e29b-41d4-a716-446655440015",
+      "productName": "Japan Highlights Tour",
+      "productSlug": "japan-highlights-tour",
+      "durationDays": 7,
+      "durationNights": 6,
+      "destinations": [
+        {
+          "continent": "Asia",
+          "subContinent": "East Asia",
+          "country": "Japan",
+          "poi": null
+        }
+      ],
+      "availableDates": [
+        "2026-11-05"
+      ],
+      "startingPrice": 22500000.00,
+      "currency": "IDR"
+    },
+    {
+      "variantId": "550e8400-e29b-41d4-a716-446655440050",
+      "variantName": "Nordic Aurora Expedition",
+      "variantSlug": "nordic-aurora-expedition",
+      "variantType": "SEASONAL",
+      "productId": "550e8400-e29b-41d4-a716-446655440016",
+      "productName": "Scandinavia & Nordics",
+      "productSlug": "scandinavia-nordics",
+      "durationDays": 10,
+      "durationNights": 8,
+      "destinations": [
+        {
+          "continent": "Europe",
+          "subContinent": "Northern Europe",
+          "country": null,
+          "poi": null
+        }
+      ],
+      "availableDates": [
+        "2026-12-10"
+      ],
+      "startingPrice": 42000000.00,
       "currency": "IDR"
     }
   ]
