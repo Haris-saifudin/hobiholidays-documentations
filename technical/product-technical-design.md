@@ -781,7 +781,7 @@ erDiagram
     }
 
     products ||--o{ product_locations : "product_id"
-    areas    ||--o{ product_locations : "area_id (Flexible anchor: POI, Country, or Sub-Continent)"
+    areas    ||--o{ product_locations : "area_id (Flexible anchor: POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
 ```
 
 | Table | id | product_id | source_type | area_id | area_name | Anchored Level | Resolved Upward Flat Hierarchy | sort_order |
@@ -790,6 +790,7 @@ erDiagram
 | `product_locations` | loc_02 | prod_gwe_01 | AREA | 550e8400-e29b-41d4-a716-446655440002 | Eiffel Tower Paris | **POI** (Tier 4) | `continent: Europe, subContinent: Western Europe, country: France, poi: Eiffel Tower Paris` | 2 |
 | `product_locations` | loc_03 | prod_jp_01 | AREA | 550e8400-e29b-41d4-a716-446655440010 | Japan | **COUNTRY** (Tier 3) | `continent: Asia, subContinent: East Asia, country: Japan, poi: NULL` | 1 |
 | `product_locations` | loc_04 | prod_nordic_01 | AREA | 550e8400-e29b-41d4-a716-446655440020 | Scandinavia & Nordics | **SUB_CONTINENT** (Tier 2) | `continent: Europe, subContinent: Northern Europe, country: NULL, poi: NULL` | 1 |
+| `product_locations` | loc_05 | prod_safari_01 | AREA | 550e8400-e29b-41d4-a716-446655440030 | Africa | **CONTINENT** (Tier 1) | `continent: Africa, subContinent: NULL, country: NULL, poi: NULL` | 1 |
 
 ---
 

@@ -246,7 +246,7 @@ erDiagram
     product_trips            ||--o| product_itineraries     : "trip_id (override)"
     product_itineraries      ||--o{ product_itinerary_items : "itinerary_id"
     products                 ||--o{ product_locations       : "product_id"
-    areas                    ||--o{ product_locations       : "area_id (POI marker)"
+    areas                    ||--o{ product_locations       : "area_id (Flexible anchor: POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
     products                 ||--o{ product_media           : "product_id"
     product_media            ||--o{ product_media_usages    : "media_id"
     products                 ||--o{ product_supplementaries : "product_id"
@@ -356,10 +356,10 @@ erDiagram
     }
 
     areas {
-        uuid      id           PK "Area Domain (POI level)"
+        uuid      id           PK "Area Domain (any tier: POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
         uuid      parent_id    FK "Continent -> Sub Continent -> Country -> POI"
         int       area_type_id FK
-        varchar   name         "e.g. Keukenhof, Eiffel Tower"
+        varchar   name         "e.g. Keukenhof, Eiffel Tower, Japan, Europe"
         varchar   code
     }
 
@@ -367,7 +367,7 @@ erDiagram
         uuid      id           PK
         uuid      product_id   FK
         varchar   source_type
-        uuid      area_id      FK "logical FK → areas.id (POI or Country)"
+        uuid      area_id      FK "logical FK → areas.id (Flexible anchor: POI, COUNTRY, SUB_CONTINENT, or CONTINENT)"
         varchar   area_name    "denormalized"
         text      address
         int       sort_order

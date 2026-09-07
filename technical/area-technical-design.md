@@ -6,6 +6,7 @@
 > _Engineered for High Scalability, Hierarchical Tree Traversal, and optimized for a NestJS + PostgreSQL stack._
 
 > **See Also:**
+>
 > - [Product Technical Design](./product-technical-design.md) — Cross-domain `product_locations` reference
 > - [Search & Filter Architecture](./product-search-filter-technical-design.md) — Area hierarchy joins in search SQL
 > - [SEO Technical Design](./seo-technical-design.md) — Destination landing page SEO (`target_type = 'AREA'`)
@@ -21,11 +22,12 @@ The following architectural guidelines must be strictly adhered to during implem
 
 ### 1. Hierarchical Closure Pattern & Pure Relational Adjacency List (Continent → Sub Continent → Country → POI)
 
-The geography tree follows a standardized 4-tier taxonomy: **Continent (Tier 1) → Sub Continent (Tier 2) → Country (Tier 3) → POI (Point of Interest, Tier 4)**. To handle multi-level geographical relationships efficiently without recursive performance hits on deep reads, the architecture combines an **Adjacency List (`parent_id`)** with composite B-Tree indexing on `(parent_id, area_type_id, slug)` for rapid subtree lookups and traversal. POIs represent individual landmarks, attractions, or specific visiting spots (e.g., *Keukenhof Gardens*, *Eiffel Tower*, *Mount Fuji*).
+The geography tree follows a standardized 4-tier taxonomy: **Continent (Tier 1) → Sub Continent (Tier 2) → Country (Tier 3) → POI (Point of Interest, Tier 4)**. To handle multi-level geographical relationships efficiently without recursive performance hits on deep reads, the architecture combines an **Adjacency List (`parent_id`)** with composite B-Tree indexing on `(parent_id, area_type_id, slug)` for rapid subtree lookups and traversal. POIs represent individual landmarks, attractions, or specific visiting spots (e.g., _Keukenhof Gardens_, _Eiffel Tower_, _Mount Fuji_).
 
 ### 2. Pure Relational Multi-Tier Geography (Decouple PostGIS & Spatial Types)
 
 The platform deliberately decouples PostGIS and spatial dependencies:
+
 - **No PostGIS Extensions:** `CREATE EXTENSION IF NOT EXISTS "postgis";` is strictly omitted. Only standard PostgreSQL extensions (`"uuid-ossp"` and `"pg_trgm"`) are retained.
 - **No Spatial Geometry Types or GiST Indexes:** PostGIS geometry columns (`GEOMETRY`), GiST spatial indexes, and coordinate dependencies are removed.
 - **No Spatial Functions:** Spatial queries like `ST_Contains` or `ST_Within` are not used.
@@ -39,10 +41,18 @@ The platform deliberately decouples PostGIS and spatial dependencies:
 
 ### 4. Flexible Flat Anchoring & Dynamic Upward Traversal
 
-While the master geography taxonomy supports 4 tiers, **products are not locked into requiring all 4 tiers**. In actual travel catalog operations:
-- **Multi-Tier Anchoring:** A product can anchor its destination marker (`product_locations.area_id`) to **any level in the tree**: a specific **POI** (*Keukenhof Gardens*), a **Country** (*Japan*, *Netherlands*), a **Sub-Continent** (*Western Europe*, *Nordic*), or even a **Continent** (*Europe*).
-- **Flat DTO Presentation:** Storefront feeds and API contracts maintain a flat structure (`continent`, `subContinent`, `country`, `poi`), where tiers below the linked anchor node evaluate to `NULL` / optional, and ancestors are resolved dynamically upward to the root `Continent`.
-- **Search & Rollup Symmetry:** Filtering by a higher-level node (e.g. `continentSlug = 'europe'` or `countrySlug = 'netherlands'`) matches all products anchored directly to that node as well as any descendant child nodes.
+While the master geography taxonomy supports a 4-tier relational structure (`Continent → Sub Continent → Country → POI`), **the flat presentation in API payloads and database mapping does not force or lock all 4 tiers to be populated** (_area tetap dibuat flat, namun tidak mengunci harus terisi semua_).
+
+In actual travel catalog operations:
+
+- **Multi-Tier Flexible Anchoring:** A tour product can anchor its destination marker (`product_locations.area_id`) to **any tier in the tree** according to its operational scope:
+  1. **POI (Tier 4):** Specific landmark, attraction, or visiting spot (e.g., _Keukenhof Gardens_, _Eiffel Tower_, _Mount Fuji_). All 4 tiers (`continent`, `subContinent`, `country`, `poi`) are populated.
+  2. **Country (Tier 3):** Country-wide tour with no single POI anchor (e.g., _Japan Sakura Discovery_, _Switzerland Scenic Rail_). Field `poi` is `null`.
+  3. **Sub-Continent (Tier 2):** Regional / multi-country tour across a sub-continental territory (e.g., _Scandinavia & Nordics_, _Balkan Highlights_, _Western Europe Express_). Fields `country` and `poi` are `null`.
+  4. **Continent (Tier 1):** Macro continental tour or expedition (e.g., _Grand Europe Explorer_, _Africa Safari Overland_). Fields `subContinent`, `country`, and `poi` are `null`.
+  5. **Direct / Intermediate Skip:** If a sovereign nation is linked directly to a Continent without an intermediate Sub-Continent, `subContinent` is `null` while `country` and `continent` are populated.
+- **Flat DTO Presentation:** Storefront feeds, search filters, and API contracts expose a clean, flat DTO (`continent`, `subContinent`, `country`, `countryCode`, `poi`). Tiers below the linked anchor node evaluate cleanly to `null`, and ancestor nodes are resolved dynamically upward to the root `Continent`.
+- **Search & Rollup Symmetry:** Relational filtering by any higher-level node (e.g., `continentSlug = 'europe'` or `countrySlug = 'netherlands'`) automatically matches products anchored directly to that node as well as any descendant child nodes.
 
 ### 5. DevOps & Automated Migrations
 
@@ -185,29 +195,39 @@ erDiagram
 
 **`area_types`**
 
-| id | name | description |
-| :--- | :--- | :--- |
-| 1 | CONTINENT | Global continental landmasses and geographic macro-regions (root level) |
-| 2 | SUB_CONTINENT | Sub-continental regions and geopolitical sub-divisions |
-| 3 | COUNTRY | Sovereign states and independent nations |
-| 4 | POI | Point of Interest, landmark, attraction, or specific activity spot |
+| id  | name          | description                                                             |
+| :-- | :------------ | :---------------------------------------------------------------------- |
+| 1   | CONTINENT     | Global continental landmasses and geographic macro-regions (root level) |
+| 2   | SUB_CONTINENT | Sub-continental regions and geopolitical sub-divisions                  |
+| 3   | COUNTRY       | Sovereign states and independent nations                                |
+| 4   | POI           | Point of Interest, landmark, attraction, or specific activity spot      |
 
 **`areas`**
 
-| id | parent_id | area_type_id | code | name | slug | iso_code | listing_status | sort_order |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| area_eur_01 | NULL | 1 | EUR | Europe | europe | NULL | ACTIVE | 1 |
-| area_weur_01 | area_eur_01 | 2 | WEUR | Western Europe | western-europe | NULL | ACTIVE | 2 |
-| area_nl_01 | area_weur_01 | 3 | NL | Netherlands | netherlands | NL | ACTIVE | 3 |
-| area_keukenhof_01 | area_nl_01 | 4 | NL-KEUKENHOF | Keukenhof Gardens | keukenhof-gardens | NULL | ACTIVE | 4 |
+| id                  | parent_id       | area_type_id      | code          | name              | slug              | iso_code | listing_status | sort_order |
+| :------------------ | :-------------- | :---------------- | :------------ | :---------------- | :---------------- | :------- | :------------- | :--------- |
+| `area_eur_01`       | NULL            | 1 (CONTINENT)     | EUR           | Europe            | europe            | NULL     | ACTIVE         | 1          |
+| `area_weur_01`      | `area_eur_01`   | 2 (SUB_CONTINENT) | WEUR          | Western Europe    | western-europe    | NULL     | ACTIVE         | 2          |
+| `area_neur_01`      | `area_eur_01`   | 2 (SUB_CONTINENT) | NEUR          | Northern Europe   | northern-europe   | NULL     | ACTIVE         | 3          |
+| `area_nl_01`        | `area_weur_01`  | 3 (COUNTRY)       | NL            | Netherlands       | netherlands       | NL       | ACTIVE         | 4          |
+| `area_fr_01`        | `area_weur_01`  | 3 (COUNTRY)       | FR            | France            | france            | FR       | ACTIVE         | 5          |
+| `area_keukenhof_01` | `area_nl_01`    | 4 (POI)           | NL-KEUKENHOF  | Keukenhof Gardens | keukenhof-gardens | NULL     | ACTIVE         | 6          |
+| `area_eiffel_01`    | `area_fr_01`    | 4 (POI)           | FR-PAR-EIFFEL | Eiffel Tower      | eiffel-tower      | NULL     | ACTIVE         | 7          |
+| `area_asia_01`      | NULL            | 1 (CONTINENT)     | ASIA          | Asia              | asia              | NULL     | ACTIVE         | 8          |
+| `area_easia_01`     | `area_asia_01`  | 2 (SUB_CONTINENT) | EASIA         | East Asia         | east-asia         | NULL     | ACTIVE         | 9          |
+| `area_jp_01`        | `area_easia_01` | 3 (COUNTRY)       | JP            | Japan             | japan             | JP       | ACTIVE         | 10         |
+| `area_fuji_01`      | `area_jp_01`    | 4 (POI)           | JP-FUJI       | Mount Fuji        | mount-fuji        | NULL     | ACTIVE         | 11         |
+| `area_afr_01`       | NULL            | 1 (CONTINENT)     | AFR           | Africa            | africa            | NULL     | ACTIVE         | 12         |
 
 **`product_locations` (Flexible Cross-Domain Anchoring Sample)**
 
-| id | product_id | source_type | area_id | area_name | Anchored Tier | Resolved Upward Flat Hierarchy |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| loc_01 | prod_gwe_01 | AREA | area_keukenhof_01 | Keukenhof Gardens | **POI** (Tier 4) | `continent: Europe, subContinent: Western Europe, country: Netherlands, poi: Keukenhof Gardens` |
-| loc_02 | prod_gwe_01 | AREA | area_nl_01 | Netherlands | **COUNTRY** (Tier 3) | `continent: Europe, subContinent: Western Europe, country: Netherlands, poi: NULL` |
-| loc_03 | prod_weur_01 | AREA | area_weur_01 | Western Europe | **SUB_CONTINENT** (Tier 2) | `continent: Europe, subContinent: Western Europe, country: NULL, poi: NULL` |
+| id       | product_id       | source_type | area_id             | area_name         | Anchored Tier              | Resolved Upward Flat Hierarchy                                                                          | sort_order |
+| :------- | :--------------- | :---------- | :------------------ | :---------------- | :------------------------- | :------------------------------------------------------------------------------------------------------ | :--------- |
+| `loc_01` | `prod_gwe_01`    | AREA        | `area_keukenhof_01` | Keukenhof Gardens | **POI** (Tier 4)           | `continent: "Europe", subContinent: "Western Europe", country: "Netherlands", poi: "Keukenhof Gardens"` | 1          |
+| `loc_02` | `prod_gwe_01`    | AREA        | `area_eiffel_01`    | Eiffel Tower      | **POI** (Tier 4)           | `continent: "Europe", subContinent: "Western Europe", country: "France", poi: "Eiffel Tower"`           | 2          |
+| `loc_03` | `prod_jp_01`     | AREA        | `area_jp_01`        | Japan             | **COUNTRY** (Tier 3)       | `continent: "Asia", subContinent: "East Asia", country: "Japan", poi: null`                             | 1          |
+| `loc_04` | `prod_nordic_01` | AREA        | `area_neur_01`      | Northern Europe   | **SUB_CONTINENT** (Tier 2) | `continent: "Europe", subContinent: "Northern Europe", country: null, poi: null`                        | 1          |
+| `loc_05` | `prod_safari_01` | AREA        | `area_afr_01`       | Africa            | **CONTINENT** (Tier 1)     | `continent: "Africa", subContinent: null, country: null, poi: null`                                     | 1          |
 
 ---
 
@@ -220,7 +240,7 @@ erDiagram
     CONTINENT     ||--o{ SUB_CONTINENT : "parent_id (1:N)"
     SUB_CONTINENT ||--o{ COUNTRY       : "parent_id (1:N)"
     COUNTRY       ||--o{ POI           : "parent_id (1:N)"
-    
+
     CONTINENT     ||--o{ product_locations : "area_id (Tier 1 anchor - macro tour)"
     SUB_CONTINENT ||--o{ product_locations : "area_id (Tier 2 anchor - regional tour)"
     COUNTRY       ||--o{ product_locations : "area_id (Tier 3 anchor - country tour)"
@@ -321,17 +341,24 @@ The following SQL query resolves product location markers anchored to any level 
 ```sql
 SELECT
   pl.id AS location_id,
+  pl.product_id,
   pl.area_id,
   target_area.name AS target_area_name,
-  target_area.area_type_id,
+  target_area.slug AS target_area_slug,
+  at.name AS anchor_area_type,
   CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END AS poi,
+  CASE WHEN target_area.area_type_id = 4 THEN target_area.slug ELSE NULL END AS poi_slug,
   country_area.name AS country,
-  country_area.code AS country_code,
+  country_area.slug AS country_slug,
+  country_area.iso_code AS country_code,
   subcont_area.name AS sub_continent,
+  subcont_area.slug AS sub_continent_slug,
   continent_area.name AS continent,
+  continent_area.slug AS continent_slug,
   pl.sort_order
 FROM product_locations pl
 INNER JOIN areas target_area ON target_area.id = pl.area_id
+INNER JOIN area_types at ON at.id = target_area.area_type_id
 LEFT JOIN areas country_area ON country_area.id = CASE
   WHEN target_area.area_type_id = 4 THEN target_area.parent_id
   WHEN target_area.area_type_id = 3 THEN target_area.id
@@ -354,14 +381,292 @@ WHERE pl.product_id = :productId
 ORDER BY pl.sort_order ASC;
 ```
 
-### Standard Flat DTO Contract
+---
+
+## 📊 SQL Query Execution Output Matrix
+
+The table below illustrates the exact flat column output produced by the query above across various anchor tiers:
+
+| location_id | target_area_name  | anchor_area_type           | continent | sub_continent   | country     | country_code | poi               |
+| :---------- | :---------------- | :------------------------- | :-------- | :-------------- | :---------- | :----------- | :---------------- |
+| `loc_01`    | Keukenhof Gardens | **POI** (Tier 4)           | Europe    | Western Europe  | Netherlands | NL           | Keukenhof Gardens |
+| `loc_02`    | Eiffel Tower      | **POI** (Tier 4)           | Europe    | Western Europe  | France      | FR           | Eiffel Tower      |
+| `loc_03`    | Japan             | **COUNTRY** (Tier 3)       | Asia      | East Asia       | Japan       | JP           | _NULL_            |
+| `loc_04`    | Northern Europe   | **SUB_CONTINENT** (Tier 2) | Europe    | Northern Europe | _NULL_      | _NULL_       | _NULL_            |
+| `loc_05`    | Africa            | **CONTINENT** (Tier 1)     | Africa    | _NULL_          | _NULL_      | _NULL_       | _NULL_            |
+
+---
+
+## 📦 Standard Flat DTO Contract (NestJS / TypeScript)
 
 ```typescript
+/**
+ * Flat Geography Hierarchy DTO
+ * Leaves below the anchored tier evaluate to null.
+ * Ancestors are dynamically resolved upward to the root Continent.
+ */
 export interface DestinationHierarchyDto {
-  continent: string;              // Always resolved (Root)
-  subContinent?: string | null;   // Null when anchored directly to CONTINENT
-  country?: string | null;        // Null when anchored to CONTINENT or SUB_CONTINENT
-  poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
+  continent: string; // Always present (Root Continent name)
+  continentSlug: string; // e.g. "europe", "asia", "africa"
+  subContinent?: string | null; // null if anchored directly to CONTINENT
+  subContinentSlug?: string | null; // null if anchored directly to CONTINENT
+  country?: string | null; // null if anchored to CONTINENT or SUB_CONTINENT
+  countryCode?: string | null; // ISO 3166-1 alpha-2 (e.g. "NL", "JP"), null if not at Country/POI
+  countrySlug?: string | null; // e.g. "netherlands", "japan"
+  poi?: string | null; // null if anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
+  poiSlug?: string | null; // e.g. "keukenhof-gardens", "mount-fuji"
+  anchorType: "CONTINENT" | "SUB_CONTINENT" | "COUNTRY" | "POI";
+}
+
+/**
+ * Product Location Record DTO (as returned in PDP & Itinerary Stop Points)
+ */
+export interface ProductLocationDto {
+  id: string;
+  productId: string;
+  sourceType: "AREA" | "MANUAL";
+  areaId: string;
+  areaName: string;
+  address?: string | null;
+  sortOrder: number;
+  hierarchy: DestinationHierarchyDto;
 }
 ```
 
+---
+
+## 📄 Real-World Flat DTO JSON Samples
+
+The following concrete JSON payloads demonstrate how the flat area data structure behaves in each anchor scenario.
+
+### Sample 1: POI Level Anchor (Tier 4 — All 4 Tiers Populated)
+
+> **Use Case:** A specific landmark or attraction stop (e.g. _Keukenhof Gardens_, _Eiffel Tower_). All 4 tiers are present.
+
+```json
+{
+  "locationId": "loc_01",
+  "sourceType": "AREA",
+  "areaId": "area_keukenhof_01",
+  "areaName": "Keukenhof Gardens",
+  "sortOrder": 1,
+  "hierarchy": {
+    "continent": "Europe",
+    "continentSlug": "europe",
+    "subContinent": "Western Europe",
+    "subContinentSlug": "western-europe",
+    "country": "Netherlands",
+    "countryCode": "NL",
+    "countrySlug": "netherlands",
+    "poi": "Keukenhof Gardens",
+    "poiSlug": "keukenhof-gardens",
+    "anchorType": "POI"
+  }
+}
+```
+
+---
+
+### Sample 2: Country Level Anchor (Tier 3 — `poi` is Null)
+
+> **Use Case:** A nationwide tour package visiting multiple cities/regions across a single country (e.g. _Japan Golden Route 7D_, _Swiss Scenic Rail 8D_).
+
+```json
+{
+  "locationId": "loc_03",
+  "sourceType": "AREA",
+  "areaId": "area_jp_01",
+  "areaName": "Japan",
+  "sortOrder": 1,
+  "hierarchy": {
+    "continent": "Asia",
+    "continentSlug": "asia",
+    "subContinent": "East Asia",
+    "subContinentSlug": "east-asia",
+    "country": "Japan",
+    "countryCode": "JP",
+    "countrySlug": "japan",
+    "poi": null,
+    "poiSlug": null,
+    "anchorType": "COUNTRY"
+  }
+}
+```
+
+---
+
+### Sample 3: Sub-Continent Level Anchor (Tier 2 — `country` and `poi` are Null)
+
+> **Use Case:** A multi-country regional tour traversing across a sub-continent (e.g. _Scandinavia Aurora & Fjord Explorer_, _Balkan Discovery Tour_).
+
+```json
+{
+  "locationId": "loc_04",
+  "sourceType": "AREA",
+  "areaId": "area_neur_01",
+  "areaName": "Northern Europe",
+  "sortOrder": 1,
+  "hierarchy": {
+    "continent": "Europe",
+    "continentSlug": "europe",
+    "subContinent": "Northern Europe",
+    "subContinentSlug": "northern-europe",
+    "country": null,
+    "countryCode": null,
+    "countrySlug": null,
+    "poi": null,
+    "poiSlug": null,
+    "anchorType": "SUB_CONTINENT"
+  }
+}
+```
+
+---
+
+### Sample 4: Continent Level Anchor (Tier 1 — `subContinent`, `country`, and `poi` are Null)
+
+> **Use Case:** A trans-continental grand overland expedition or continental discovery tour (e.g. _Grand Africa Safari Overland_, _Pan-Europe Grand Journey_).
+
+```json
+{
+  "locationId": "loc_05",
+  "sourceType": "AREA",
+  "areaId": "area_afr_01",
+  "areaName": "Africa",
+  "sortOrder": 1,
+  "hierarchy": {
+    "continent": "Africa",
+    "continentSlug": "africa",
+    "subContinent": null,
+    "subContinentSlug": null,
+    "country": null,
+    "countryCode": null,
+    "countrySlug": null,
+    "poi": null,
+    "poiSlug": null,
+    "anchorType": "CONTINENT"
+  }
+}
+```
+
+---
+
+### Sample 5: Multi-Destination Tour Package (PDP API Response Sample: `GET /api/v1/products/grand-west-europe`)
+
+> **Use Case:** A tour product featuring multiple destination markers with mixed anchor levels (some POIs, some Countries).
+
+```json
+{
+  "statusCode": 200,
+  "message": "Product details retrieved successfully",
+  "data": {
+    "id": "prod_gwe_01",
+    "code": "GWE-MASTER",
+    "name": "Grand West Europe",
+    "slug": "grand-west-europe",
+    "productType": "JOURNEY",
+    "listingStatus": "ACTIVE",
+    "journey": {
+      "durationDays": 11,
+      "durationNights": 10
+    },
+    "locations": [
+      {
+        "id": "loc_01",
+        "areaId": "area_keukenhof_01",
+        "areaName": "Keukenhof Gardens",
+        "sortOrder": 1,
+        "hierarchy": {
+          "continent": "Europe",
+          "continentSlug": "europe",
+          "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
+          "country": "Netherlands",
+          "countryCode": "NL",
+          "countrySlug": "netherlands",
+          "poi": "Keukenhof Gardens",
+          "poiSlug": "keukenhof-gardens",
+          "anchorType": "POI"
+        }
+      },
+      {
+        "id": "loc_02",
+        "areaId": "area_eiffel_01",
+        "areaName": "Eiffel Tower",
+        "sortOrder": 2,
+        "hierarchy": {
+          "continent": "Europe",
+          "continentSlug": "europe",
+          "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
+          "country": "France",
+          "countryCode": "FR",
+          "countrySlug": "france",
+          "poi": "Eiffel Tower",
+          "poiSlug": "eiffel-tower",
+          "anchorType": "POI"
+        }
+      },
+      {
+        "id": "loc_03",
+        "areaId": "area_ch_01",
+        "areaName": "Switzerland",
+        "sortOrder": 3,
+        "hierarchy": {
+          "continent": "Europe",
+          "continentSlug": "europe",
+          "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
+          "country": "Switzerland",
+          "countryCode": "CH",
+          "countrySlug": "switzerland",
+          "poi": null,
+          "poiSlug": null,
+          "anchorType": "COUNTRY"
+        }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### Sample 6: Search & Catalog Listing Card Payload Sample (`GET /api/v1/variants/search`)
+
+> **Use Case:** How flat destination summaries are returned inside variant cards on the **All Tours** storefront catalog, allowing rapid UI badge rendering without recursive tree lookups:
+
+```json
+{
+  "variantId": "var_gwe_std",
+  "productId": "prod_gwe_01",
+  "name": "Grand West Europe Classic 11D",
+  "slug": "gwe-classic-11d",
+  "variantType": "STANDARD",
+  "durationDays": 11,
+  "durationNights": 10,
+  "startingPrice": 28500000.0,
+  "currency": "IDR",
+  "coverImageUrl": "/api/v1/media/media_001/stream",
+  "destinations": [
+    {
+      "continent": "Europe",
+      "subContinent": "Western Europe",
+      "country": "Netherlands",
+      "poi": "Keukenhof Gardens"
+    },
+    {
+      "continent": "Europe",
+      "subContinent": "Western Europe",
+      "country": "France",
+      "poi": "Eiffel Tower"
+    },
+    {
+      "continent": "Europe",
+      "subContinent": "Western Europe",
+      "country": "Switzerland",
+      "poi": null
+    }
+  ]
+}
+```
