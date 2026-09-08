@@ -29,8 +29,8 @@ product_badges  (Visual Marketing Badges: Best Seller, Flash Sale, Early Bird, P
   └── product_variant_badges  (M:N Promotional ribbons/pills on Variant Cards)
 
 products  (master brand / program umbrella + Multi-Dimensional Product-level categories)
-  └── product_variants  (bookable listing card + Variant-specific category tags + Badges + DEFAULT Master Itinerary)
-        └── product_trips  (concrete dated departure + OVERRIDE Itinerary)
+  └── product_variants  (bookable listing card + Variant-specific category tags + Badges + DEFAULT Master Itinerary + DEFAULT Master Add-ons)
+        └── product_trips  (concrete dated departure + OVERRIDE Itinerary + OVERRIDE / EXCLUSIVE Add-ons)
               └── product_trip_pricings  (Age-Band Pricings & Quota: ADULT / INFANT)
                     └── product_pricing_components  (Bundled Inclusions Breakdown: Base Tour, Visa, Shuttle, Tip)
 ```
@@ -49,8 +49,10 @@ products [prod_gwe_01] (Grand West Europe)
 │   ├── GWE Classic All-Year [var_gwe_std_26]  (variant_type = 'STANDARD')    ← card 1: Core recurring package
 │   │     ├── Badges / Tags: 🔥 Best Seller
 │   │     ├── Default Itinerary: 7D/6N Western Europe Classic Program (Amsterdam, Paris, Swiss Alps)
-│   │     ├── Add-ons (EXCLUDED Extras): Single Supplement (Rp 8.5M), Mount Titlis & Ice Flyer (Rp 2.4M)
+│   │     ├── Default Add-ons: Single Supplement (Rp 8.5M), Mount Titlis & Ice Flyer (Rp 2.4M), Eiffel Summit (Rp 850k), Schengen Visa VIP (Rp 2.5M)
 │   │     └── product_trips: 05 Aug 2026 → 11 Aug 2026 (max 30 pax)
+│   │           ├── Itinerary: Inherits Variant Default Itinerary
+│   │           ├── Add-ons: Inherits Variant Default Add-ons
 │   │           └── All-Inclusive Pricings & Age Bands:
 │   │                 ├── ADULT: Rp 28.5M (consumes_quota = TRUE) [All-inclusive base package]
 │   │                 │     ├── International Flight & Hotel (Twin-share): Rp 22.0M
@@ -63,8 +65,10 @@ products [prod_gwe_01] (Grand West Europe)
 │   │     ├── Badges / Tags: 🌸 Spring Edition
 │   │     ├── Variant Categories: Season -> Spring & Sakura Season (Primary)
 │   │     ├── Default Itinerary: 7D/6N Spring Blossom Western Europe
+│   │     ├── Default Add-ons: Inherits GWE catalog standard add-on options
 │   │     └── product_trips: 10 Sept 2026 → 16 Sept 2026 (max 30 pax)
 │   │           ├── Itinerary: Inherits Variant Default Itinerary
+│   │           ├── Add-ons: Inherits Variant Default Add-ons
 │   │           └── All-Inclusive Pricings & Age Bands:
 │   │                 ├── ADULT: Rp 28.0M (consumes_quota = TRUE)
 │   │                 └── INFANT: Rp 6.5M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
@@ -73,8 +77,10 @@ products [prod_gwe_01] (Grand West Europe)
 │   │     ├── Badges / Tags: ☀️ Summer Holiday
 │   │     ├── Variant Categories: Season -> Summer Holiday (Primary)
 │   │     ├── Default Itinerary: 7D/6N Western Europe Summer Vacation Program
+│   │     ├── Default Add-ons: Inherits GWE catalog standard add-on options
 │   │     └── product_trips: 10 Jul 2026 → 16 Jul 2026 (max 35 pax)
 │   │           ├── Itinerary: Inherits Variant Default Itinerary
+│   │           ├── Add-ons: Inherits Variant Default Add-ons
 │   │           └── All-Inclusive Pricings & Age Bands:
 │   │                 ├── ADULT: Rp 10.0M (consumes_quota = TRUE) [Itemized Bundled Rate]
 │   │                 │     ├── Biaya Keberangkatan & Land Tour: Rp 9.35M
@@ -88,8 +94,10 @@ products [prod_gwe_01] (Grand West Europe)
 │   ├── GWE Tulip Keukenhof  [var_gwe_tlp_26]  (variant_type = 'THEMED')      ← card 4: Keukenhof tulip festival
 │   │     ├── Badges / Tags: 🌷 Tulip Edition
 │   │     ├── Variant Categories: Season -> Spring & Sakura Season, Theme -> Sakura & Flower Blooms (Primary)
+│   │     ├── Default Itinerary: 7D/6N Tulip Festival Base Itinerary
 │   │     └── product_trips: 15 Apr 2026 → 21 Apr 2026 (max 25 pax)
 │   │           ├── Itinerary: OVERRIDE -> 7D/6N Tulip Special Keukenhof Peak Itinerary
+│   │           ├── Add-ons: OVERRIDE -> Single Supplement (Rp 11.5M - Peak Hotel Surcharge) + EXCLUSIVE Keukenhof Flower Parade VIP Stand (Rp 1.5M)
 │   │           └── All-Inclusive Pricings & Age Bands:
 │   │                 ├── ADULT: Rp 31.0M (consumes_quota = TRUE)
 │   │                 └── INFANT: Rp 7.0M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
@@ -97,8 +105,10 @@ products [prod_gwe_01] (Grand West Europe)
 │   └── Early Bird Europe    [var_gwe_eb_26]   (variant_type = 'PROMOTIONAL') ← card 5: Flash promotional package
 │         ├── Badges / Tags: ⚡ Early Bird
 │         ├── Variant Categories: Theme -> Cultural & Wonders (Primary)
+│         ├── Default Itinerary: 7D/6N Western Europe Classic Program
 │         └── product_trips: 01 Nov 2026 → 07 Nov 2026 (max 20 pax)
 │               ├── Itinerary: Inherits Variant Default Itinerary
+│               ├── Add-ons: Inherits Variant Default Add-ons
 │               └── All-Inclusive Pricings & Age Bands:
 │                     ├── ADULT: Rp 24.9M (consumes_quota = TRUE)
 │                     └── INFANT: Rp 6.0M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
@@ -151,14 +161,227 @@ $$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
 
 `product_trips` are owned by a **variant**, not directly by a product. This allows different variants under the same product umbrella (e.g., "Spring" vs "Summer") to have entirely independent departure calendars, quotas, and pricing.
 
-### 6. Itinerary Ownership & Fallback (Variant Default → Trip Override)
+### 6. Itinerary Architecture, Hierarchical Fallback & Scheduling Subsystem
 
-Itineraries are decoupled from base products and anchored to variants:
-- **Variant Default (`trip_id IS NULL`):** Every variant maintains a standard master itinerary.
-- **Trip Override (`trip_id IS NOT NULL`):** Individual trips may override the master itinerary for date-specific variations (e.g. holiday parades, seasonal closures).
-- **Application Fallback:** `resolved_itinerary = trip.itinerary ?? variant.itinerary`.
+The **Itinerary Subsystem** (`product_itineraries` and `product_itinerary_items`) manages the day-by-day travel programme for tour packages. Rather than anchoring schedules rigidly to top-level products, Hobiholidays employs a two-tiered hierarchical fallback architecture anchored to Variants (L2) and Trips (L3).
 
-### 7. All-Inclusive Base Pricing, Itemized Component Breakdown & Excluded Add-on Architecture
+#### Architectural Rationale & Decoupling
+- **Decoupled from Base Products (L1):** Base products (`products`) encapsulate high-level brand umbrellas, descriptive copy, and multi-dimensional category taxonomy. Different variants under the same product (e.g., *GWE Classic All-Year* vs. *GWE Spring Blossom* vs. *GWE Tulip Keukenhof*) feature distinct seasonal timings, routing, and pacing. Therefore, itineraries are strictly anchored to **Variants (L2)** and **Trips (L3)**.
+- **Variant Master Default (`trip_id IS NULL`):** Every tour variant maintains exactly one authoritative master itinerary. This baseline itinerary defines the standard day-by-day schedule, attractions, transport, and meal arrangements shared across all standard dated departures under that variant.
+- **Trip Date-Specific Override (`trip_id IS NOT NULL`):** Specific departures may face calendar events (such as the Keukenhof Flower Parade on a specific Saturday, local national holidays, temporary venue closures, or seasonal routing). Instead of creating a duplicate variant, an operational team attaches a custom trip override itinerary to that specific `trip_id`.
+- **Atomic Program Replacement Semantics:** Unlike add-ons (which resolve independently per code), itineraries are resolved as an **atomic, cohesive unit**. When a trip defines an override itinerary, the system substitutes the entire schedule:
+  $$\text{effective\_itinerary} = \text{trip.itinerary} \mathbin{??} \text{variant.itinerary}$$
+  If a trip has its own itinerary record, all day-by-day items are loaded exclusively from that record; it does not merge or stitch individual days from the master variant.
+
+#### Relational Schema & Database Integrity
+1. **Itinerary Header (`product_itineraries`):**
+   - `variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT`: Guarantees every itinerary belongs to an established variant.
+   - `trip_id UUID NULL REFERENCES product_trips(id) ON DELETE SET NULL`: Optional departure pointer. When `NULL`, designates the variant's master default.
+   - `source_type VARCHAR(50) NOT NULL DEFAULT 'INTERNAL'`: Enforces source tracking (`MERCHANT` or `INTERNAL`) via `CHECK (source_type IN ('MERCHANT', 'INTERNAL'))`.
+   - `itinerary_type VARCHAR(50) NOT NULL DEFAULT 'STANDARD'`: Distinguishes standard master programs from custom overrides via `CHECK (itinerary_type IN ('STANDARD', 'CUSTOM'))`.
+   - `title VARCHAR(255) NOT NULL` and `summary TEXT`: Descriptive metadata surfaced in PDP itinerary headers and downloadable materials.
+2. **Partial Unique Indexes (Guaranteed Singularity):**
+   - *Master default uniqueness:*
+     ```sql
+     CREATE UNIQUE INDEX uq_itinerary_variant_default 
+         ON product_itineraries (variant_id) 
+         WHERE trip_id IS NULL;
+     ```
+     Guarantees that each variant can have at most one baseline default itinerary.
+   - *Departure override uniqueness:*
+     ```sql
+     CREATE UNIQUE INDEX uq_itinerary_trip_override 
+         ON product_itineraries (trip_id) 
+         WHERE trip_id IS NOT NULL;
+     ```
+     Guarantees that each concrete departure date can have at most one custom override itinerary.
+3. **Day-by-Day Granular Items (`product_itinerary_items`):**
+   - `itinerary_id UUID NOT NULL REFERENCES product_itineraries(id) ON DELETE RESTRICT`: Foreign key link to the itinerary header.
+   - `day_number INT NOT NULL` & `sequence_number INT NOT NULL`: Establishes chronologically ordered timeline milestones.
+   - Sequential uniqueness constraint: `CONSTRAINT uq_itinerary_item_order UNIQUE (itinerary_id, day_number, sequence_number)`.
+   - Activity classification: `CONSTRAINT chk_itinerary_item_type CHECK (item_type IN ('ACTIVITY', 'TRANSPORT', 'MEAL', 'ACCOMMODATION', 'OTHER'))`.
+   - Geographic Anchoring: `poi_area_id UUID NULL REFERENCES areas(id)` anchors activities directly to POI landmark nodes in the 4-tier geography tree without spatial overhead.
+   - Daily Inclusions & Lodging: `meals_included VARCHAR(100)` (e.g., `"Breakfast, Dinner"`) and `accommodation VARCHAR(150)` (e.g., `"Novotel Paris Centre Tour Eiffel or similar 4-star"`).
+
+#### Canonical PostgreSQL Resolution Query
+The application resolves the effective itinerary header and its complete day-by-day program for any given departure date using an efficient CTE query:
+
+```sql
+-- Resolve effective itinerary header and chronological daily schedule for a dated departure:
+WITH effective_itinerary AS (
+    SELECT 
+        id,
+        variant_id,
+        trip_id,
+        source_type,
+        itinerary_type,
+        title,
+        summary,
+        CASE 
+            WHEN trip_id IS NOT NULL THEN 'TRIP_OVERRIDE'
+            ELSE 'VARIANT_DEFAULT'
+        END AS resolution_source
+    FROM product_itineraries
+    WHERE trip_id = :tripId OR (variant_id = :variantId AND trip_id IS NULL)
+    ORDER BY trip_id ASC NULLS LAST
+    LIMIT 1
+)
+SELECT 
+    ei.id                AS itinerary_id,
+    ei.resolution_source,
+    ei.itinerary_type,
+    ei.title             AS itinerary_title,
+    ei.summary           AS itinerary_summary,
+    pii.id               AS item_id,
+    pii.day_number,
+    pii.sequence_number,
+    pii.item_type,
+    pii.title            AS item_title,
+    pii.description      AS item_description,
+    pii.poi_area_id,
+    a.name               AS poi_name,
+    pii.meals_included,
+    pii.accommodation
+FROM effective_itinerary ei
+LEFT JOIN product_itinerary_items pii 
+       ON pii.itinerary_id = ei.id
+LEFT JOIN areas a 
+       ON a.id = pii.poi_area_id
+ORDER BY pii.day_number ASC, pii.sequence_number ASC;
+```
+
+#### Operational Itinerary Lifecycle Patterns
+1. **Master Variant Default Pattern:**
+   - *Use Case:* Standard recurring departures (e.g., regular May 10 and June 14 dates) inherit the variant master 7D/6N program. Zero redundant database rows are created.
+2. **Event & Festival Date-Specific Override Pattern:**
+   - *Use Case:* The Keukenhof Tulip Festival departure (`trip_gwe_tlp_01` on April 18, 2026).
+   - *Implementation:* An override row in `product_itineraries` is created with `trip_id = 'trip_gwe_tlp_01'` and `itinerary_type = 'CUSTOM'`. Day 3 replaces the standard Amsterdam leisure day with reserved grandstand seating for the Bloemencorso Bollenstreek flower parade and Keukenhof Gardens admission.
+3. **Operational Seasonal Reroute Pattern:**
+   - *Use Case:* Late autumn or winter departures encountering mountain pass closures (e.g., Grimsel/Furka Pass winter snow closures in the Swiss Alps).
+   - *Implementation:* A trip override replaces the alpine scenic drive with an alternate route via the GoldenPass Express train and Montreux, maintaining strict schedule accuracy without altering the summer/standard master variant.
+
+---
+
+### 7. Add-on Architecture, Pricing Governance & Lifecycle Subsystem
+
+The **Add-on Subsystem** (`product_addons`) manages elective traveler upgrades, optional excursions, and supplemental accommodations. It operates independently of the base tour package pricing to provide granular booking customization.
+
+#### Architectural Purpose & Decoupling from Base Pricing
+- **Decoupled from All-Inclusive Base Fare (`product_trip_pricings`):** In Hobiholidays, catalog search cards and listing feeds surface all-inclusive starting rates (e.g., `ADULT = IDR 10.000.000`). Add-ons are strictly excluded from this baseline price, preventing price distortions in search filters while allowing travelers to customize their booking.
+- **Distinct from Bundled Inclusions (`product_pricing_components`):** `product_pricing_components` itemizes costs that are *already bundled* into the base selling price (e.g., Schengen visa fee, airport transfer, tipping). In contrast, `product_addons` represents *optional extras* that increment the order total during booking checkout.
+- **Hierarchical Tier Placement:**
+  - **Variant Master Default (`trip_id IS NULL`):** Baseline catalog of elective add-ons available across all departure dates for a given variant (e.g., Single Room Supplement, Titlis Cable Car, Paris Summit Elevator).
+  - **Trip Departure Override / Exclusive (`trip_id IS NOT NULL`):** Departure-specific pricing adjustments, date-restricted exclusive activities, or temporary availability blacklisting.
+
+#### Relational Schema & Integrity Constraints
+1. **Add-on Entity (`product_addons`):**
+   - `variant_id UUID NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT`: Hard foreign key anchoring to the parent variant.
+   - `trip_id UUID NULL REFERENCES product_trips(id) ON DELETE SET NULL`: Scoping foreign key. `NULL` denotes a variant-wide baseline option.
+   - `code VARCHAR(50) NOT NULL`: Unique functional identifier (e.g., `'ADDON-SINGLE-SUPP'`, `'ADDON-TITLIS-ICEFLYER'`).
+   - `name VARCHAR(255) NOT NULL` & `description TEXT`: Customer-facing marketing and operational details.
+2. **Classification & Domain Constraints:**
+   - Categorization constraint:
+     ```sql
+     CONSTRAINT chk_addon_type CHECK (addon_type IN (
+         'SINGLE_ROOM', 'BAGGAGE', 'FLIGHT_UPGRADE', 'EXPERIENTIAL_TOUR', 
+         'INSURANCE', 'VISA_EXPRESS', 'SPECIAL_MEAL'
+     ))
+     ```
+   - Billing model constraint:
+     ```sql
+     CONSTRAINT chk_addon_charge_type CHECK (charge_type IN ('PER_PAX', 'PER_ROOM', 'PER_BOOKING'))
+     ```
+   - Demographic eligibility:
+     ```sql
+     CONSTRAINT chk_addon_age_band CHECK (applicable_age_band IS NULL OR applicable_age_band IN ('ADULT', 'INFANT'))
+     ```
+     `NULL` designates availability to all travelers regardless of age band.
+   - Monetary sanity guard:
+     ```sql
+     CONSTRAINT chk_addon_price CHECK (price >= 0)
+     ```
+3. **Partial Unique Indexes (Per-Code Uniqueness):**
+   - *Master default code uniqueness:*
+     ```sql
+     CREATE UNIQUE INDEX uq_addon_variant_code 
+         ON product_addons (variant_id, code) 
+         WHERE trip_id IS NULL;
+     ```
+     Ensures that each add-on code is defined at most once as a default under a variant.
+   - *Departure override code uniqueness:*
+     ```sql
+     CREATE UNIQUE INDEX uq_addon_trip_code 
+         ON product_addons (trip_id, code) 
+         WHERE trip_id IS NOT NULL;
+     ```
+     Ensures that each add-on code is overridden at most once for a specific departure.
+
+#### Per-Code Fallback Resolution Mechanics
+Unlike the Itinerary Subsystem (which resolves as an all-or-nothing single schedule replacement), Add-ons resolve **item-by-item across the unique `code` set**. For each functional code, a departure-specific record supersedes the variant default:
+$$\forall \text{code}: \text{resolved\_addon}(\text{code}) = \text{trip.addon}(\text{code}) \mathbin{??} \text{variant.addon}(\text{code})$$
+
+This granular resolution ensures that overriding a single add-on (such as a peak-season single room surcharge) does not require duplicating or re-declaring all other standard add-on options.
+
+#### Canonical PostgreSQL Resolution Query
+Active add-ons for any departure date are resolved using PostgreSQL's high-performance `DISTINCT ON (code)` clause:
+
+```sql
+-- Resolve effective active Add-ons for a dated departure:
+SELECT 
+    id,
+    variant_id,
+    trip_id,
+    code,
+    name,
+    description,
+    addon_type,
+    charge_type,
+    price,
+    currency,
+    applicable_age_band,
+    is_mandatory,
+    max_quantity,
+    is_active,
+    CASE 
+        WHEN trip_id IS NOT NULL THEN 'TRIP_OVERRIDE'
+        ELSE 'VARIANT_DEFAULT'
+    END AS resolution_source
+FROM (
+    SELECT DISTINCT ON (code) *
+    FROM product_addons
+    WHERE trip_id = :tripId OR (variant_id = :variantId AND trip_id IS NULL)
+    ORDER BY code, trip_id ASC NULLS LAST
+) resolved_addons
+WHERE is_active = TRUE
+ORDER BY code ASC;
+```
+
+#### 3 Operational Override Patterns for Add-ons
+1. **Price / Quota Override (Same `code`):**
+   - *Scenario:* Peak-season hotel single room surcharges during high-demand dates (e.g., Keukenhof Tulip Festival departure `trip_gwe_tlp_01`).
+   - *Variant Default:* `code = 'ADDON-SINGLE-SUPP'`, `trip_id = NULL`, `price = 8,500,000`.
+   - *Trip Override:* `code = 'ADDON-SINGLE-SUPP'`, `trip_id = 'trip_gwe_tlp_01'`, `price = 11,500,000`.
+   - *Result:* When booking `trip_gwe_tlp_01`, the traveler is charged IDR 11.5M instead of IDR 8.5M.
+2. **Trip-Exclusive Add-on (New `code` strictly on dated trip):**
+   - *Scenario:* Festival or seasonal activity tied strictly to one specific departure window.
+   - *Trip Exclusive Row:* `code = 'ADDON-KEUKENHOF-VIP'`, `trip_id = 'trip_gwe_tlp_01'`, `price = 1,500,000`.
+   - *Result:* Surfaced in checkout exclusively for the April Tulip Festival departure; other departures under the same variant do not see this option.
+3. **Trip Suppression / Blacklist (`is_active = FALSE`):**
+   - *Scenario:* A cable car or landmark attraction is temporarily closed for maintenance during a specific departure date.
+   - *Trip Suppression Row:* `code = 'ADDON-TITLIS-ICEFLYER'`, `trip_id = 'trip_gwe_tlp_01'`, `is_active = FALSE`.
+   - *Result:* Cleanly filtered out during checkout resolution (`WHERE is_active = TRUE`), disabling it for that specific departure without modifying the variant default.
+
+#### Checkout Calculation & Billing Governance
+During booking checkout, the platform calculates total add-on liabilities based on `charge_type`:
+$$\text{Total Addon Cost} = \sum_{a \in \text{selected\_addons}} \text{CalculateAddonCharge}(a, \text{party})$$
+
+| `charge_type` | Computation Formula | Typical Use Case |
+| :--- | :--- | :--- |
+| **`PER_PAX`** | $\text{price} \times \text{eligible\_passengers} \times \text{quantity}$ | Excursions (Titlis Rotair, Eiffel Summit), Travel Insurance, Visa Express |
+| **`PER_ROOM`** | $\text{price} \times \text{number\_of\_rooms} \times \text{quantity}$ | Single Room Supplement (`ADDON-SINGLE-SUPP`), Hotel Room Category Upgrades |
+| **`PER_BOOKING`** | $\text{price} \times \text{quantity}$ | Private airport transfer vehicle booking, expedited group document dispatch |
+
+### 8. All-Inclusive Base Pricing, Itemized Component Breakdown & Excluded Add-on Architecture
 
 Hobiholidays establishes clear architectural boundaries between bundled cost components, elective upgrades, and marketing copy:
 
@@ -171,7 +394,7 @@ Hobiholidays establishes clear architectural boundaries between bundled cost com
 - **Excluded Add-ons (`product_addons`):** Configured at Variant level (and optionally supplemented at Trip level) for elective traveler upgrades that are **strictly excluded** from the base price (Single Supplement, Hot Air Balloon, Extra Baggage). Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement base pricing during booking checkout.
 - **Narrative Inclusions/Exclusions (`product_supplementaries`):** High-level qualitative bullet points rendered on PDP marketing tabs.
 
-### 8. Polymorphic Target Resolution
+### 9. Polymorphic Target Resolution
 
 Media usages and supplementary content target entities via `(target_type, target_id)`:
 
@@ -205,6 +428,9 @@ Key schema decisions specific to this hierarchy:
 | `UNIQUE(variant_id, start_date)` on `product_trips`                      | One departure per variant per calendar date                                                                         |
 | `UNIQUE(trip_id, age_band)` on `product_trip_pricings`                   | One price row per trip per age band                                                                                 |
 | `uq_itinerary_variant_default` partial index                             | Exactly 1 master itinerary per variant where `trip_id IS NULL`                                                      |
+| `uq_itinerary_trip_override` partial index                                | At most 1 custom override itinerary per trip where `trip_id IS NOT NULL`                                            |
+| `uq_addon_variant_code` partial unique index                              | At most 1 default add-on per unique code per variant where `trip_id IS NULL`                                        |
+| `uq_addon_trip_code` partial unique index                                 | At most 1 override/exclusive add-on per unique code per trip where `trip_id IS NOT NULL`                              |
 | `CHECK (end_date > start_date)` on `product_trips`                       | DB-level sanity guard on date windows                                                                               |
 | `CHECK (status IN ('ACTIVE', 'FULL', 'CANCELLED', 'COMPLETED'))`         | DB-level trip lifecycle guard                                                                                       |
 | `CHECK (selling_price > 0 AND base_price >= selling_price)`              | DB-level price sanity guard                                                                                         |
@@ -231,7 +457,8 @@ erDiagram
     product_variants             ||--o{ product_trips                : "variant_id"
     product_trips                ||--o{ product_trip_pricings        : "trip_id"
     product_trip_pricings        ||--o{ product_pricing_components   : "pricing_id"
-    product_variants             ||--o{ product_addons               : "variant_id (optional extras)"
+    product_variants             ||--o{ product_addons               : "variant_id (default master extras)"
+    product_trips                ||--o{ product_addons               : "trip_id (trip override / exclusive)"
 
     category_dimensions {
         uuid      id              PK
@@ -380,8 +607,8 @@ erDiagram
     %% =========================================================================
     product_trips                ||--o{ product_trip_pricings        : "trip_id (ADULT / INFANT tiers)"
     product_trip_pricings        ||--o{ product_pricing_components   : "pricing_id (1:N bundled inclusions)"
-    product_variants             ||--o{ product_addons               : "variant_id (optional extras)"
-    product_trips                ||--o{ product_addons               : "trip_id (trip-specific override)"
+    product_variants             ||--o{ product_addons               : "variant_id (default master extras)"
+    product_trips                ||--o{ product_addons               : "trip_id (trip override / exclusive)"
 
     %% =========================================================================
     %% 5. ITINERARY & DAILY SCHEDULE RELATIONSHIPS
@@ -891,14 +1118,16 @@ flowchart LR
 | `comp_std_03` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Airport Shuttle & Private Coach | 2,500,000.00 | TRUE | Private luxury coach for all inter-city transfers |
 | `comp_std_04` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Tour Leader & Driver Tipping | 1,500,000.00 | TRUE | Full tour duration tipping for Indonesian Tour Leader & European driver |
 
-### `product_addons` (Optional Extras for Variant `var_gwe_std_26`)
+### `product_addons` (Variant Default vs Trip Override / Exclusive)
 
-| id | variant_id | trip_id | code | name | addon_type | charge_type | price | applicable_age_band | is_mandatory |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `addon_gwe_01` | `var_gwe_std_26` | NULL | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri) | `SINGLE_ROOM` | `PER_ROOM` | 8500000.00 | `ADULT` | `FALSE` |
-| `addon_gwe_02` | `var_gwe_std_26` | NULL | `ADDON-TITLIS-ICEFLYER` | Mount Titlis Rotair Cable Car & Ice Flyer Experience | `EXPERIENTIAL_TOUR` | `PER_PAX` | 2400000.00 | `NULL` (ALL) | `FALSE` |
-| `addon_gwe_03` | `var_gwe_std_26` | NULL | `ADDON-EIFFEL-SUMMIT` | Eiffel Tower Top Summit Elevator Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 850000.00 | `NULL` (ALL) | `FALSE` |
-| `addon_gwe_04` | `var_gwe_std_26` | NULL | `ADDON-SCHENGEN-VIP` | Schengen Visa Express Consular Appointment Assistance | `VISA_EXPRESS` | `PER_PAX` | 2500000.00 | `NULL` (ALL) | `FALSE` |
+| id | variant_id | trip_id | code | name | addon_type | charge_type | price | applicable_age_band | is_mandatory | notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `addon_gwe_01` | `var_gwe_std_26` | NULL | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri) | `SINGLE_ROOM` | `PER_ROOM` | 8500000.00 | `ADULT` | `FALSE` | **VARIANT DEFAULT:** Baseline single room rate |
+| `addon_gwe_02` | `var_gwe_std_26` | NULL | `ADDON-TITLIS-ICEFLYER` | Mount Titlis Rotair Cable Car & Ice Flyer Experience | `EXPERIENTIAL_TOUR` | `PER_PAX` | 2400000.00 | `NULL` (ALL) | `FALSE` | **VARIANT DEFAULT:** Year-round alpine excursion |
+| `addon_gwe_03` | `var_gwe_std_26` | NULL | `ADDON-EIFFEL-SUMMIT` | Eiffel Tower Top Summit Elevator Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 850000.00 | `NULL` (ALL) | `FALSE` | **VARIANT DEFAULT:** Paris summit access |
+| `addon_gwe_04` | `var_gwe_std_26` | NULL | `ADDON-SCHENGEN-VIP` | Schengen Visa Express Consular Appointment Assistance | `VISA_EXPRESS` | `PER_PAX` | 2500000.00 | `NULL` (ALL) | `FALSE` | **VARIANT DEFAULT:** Expedited visa filing |
+| `addon_tlp_ovr_01` | `var_gwe_tlp_26` | `trip_gwe_tlp_01` | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri - Peak Hotel Surcharge) | `SINGLE_ROOM` | `PER_ROOM` | 11500000.00 | `ADULT` | `FALSE` | **TRIP OVERRIDE:** Peak season hotel surcharge for Tulip Festival departure |
+| `addon_tlp_exc_02` | `var_gwe_tlp_26` | `trip_gwe_tlp_01` | `ADDON-KEUKENHOF-VIP` | Keukenhof Flower Parade VIP Grandstand Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 1500000.00 | `NULL` (ALL) | `FALSE` | **TRIP EXCLUSIVE:** Special reserved grandstand seat for Bloemencorso Bollenstreek |
 
 ### `product_itineraries` (Variant Default vs Trip Override)
 
@@ -950,7 +1179,8 @@ product_variants
 | `product_variants` → `product_trips`              | Hard FK           | 1 : N       | `ON DELETE RESTRICT` + `UNIQUE(variant_id, start_date)`    |
 | `product_trips` → `product_trip_pricings`         | Hard FK           | 1 : N       | `ON DELETE RESTRICT` + `UNIQUE(trip_id, age_band)`         |
 | `product_trip_pricings` → `product_pricing_components`| Hard FK       | 1 : N       | `ON DELETE RESTRICT` (Itemized bundled components)         |
-| `product_variants` → `product_addons`             | Hard FK           | 1 : N       | `ON DELETE RESTRICT` (optional extras)                     |
+| `product_variants` → `product_addons`             | Hard FK           | 1 : N       | `ON DELETE RESTRICT` (Variant default extras)              |
+| `product_trips` → `product_addons`                | Hard FK           | 1 : N       | `ON DELETE SET NULL` (Trip override / exclusive extras)    |
 | `product_variants` → `product_itineraries`        | Hard FK           | 1 : 1       | `ON DELETE RESTRICT` + `uq_itinerary_variant_default`      |
 | `product_trips` → `product_itineraries`           | Hard FK           | 1 : 1       | `ON DELETE SET NULL` + `uq_itinerary_trip_override`        |
 | `product_itineraries` → `items`                   | Hard FK           | 1 : N       | `ON DELETE RESTRICT` (`product_itinerary_items`)           |

@@ -147,6 +147,7 @@ Hobiholidays enforces a structured, transparent separation across 3 pricing sub-
      - **Tour Leader & Driver Tipping:** IDR 50.000 (`is_included = TRUE`)
 2. **Excluded Add-on Subsystem (`product_addons`):**
    - Elective, optional upgrades and additions (`SINGLE_ROOM`, `BAGGAGE`, `FLIGHT_UPGRADE`, `EXPERIENTIAL_TOUR`, `INSURANCE`, `VISA_EXPRESS`, `SPECIAL_MEAL`).
+   - Symmetrically mirrors the Itinerary pattern: configured with a **Variant Master Default** (`trip_id IS NULL`), with optional **Trip Departure Overrides / Exclusives** (`trip_id IS NOT NULL`).
    - These items are **strictly excluded** from the base package price. Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement the base price during booking checkout.
 3. **Descriptive Narrative Inclusions & Exclusions (`product_supplementaries`):**
    - High-level qualitative bullet points (`INCLUDED`, `EXCLUDED`, `IMPORTANT_INFO`) rendered on PDP marketing overview tabs.
@@ -431,6 +432,27 @@ CREATE TABLE product_addons (
     CONSTRAINT chk_addon_age_band    CHECK (applicable_age_band IS NULL OR applicable_age_band IN ('ADULT', 'INFANT'))
 );
 CREATE INDEX idx_addons_variant_trip ON product_addons(variant_id, trip_id);
+
+-- Variant default add-on: exactly 1 master default per code per variant where trip_id IS NULL
+CREATE UNIQUE INDEX uq_addon_variant_code 
+    ON product_addons (variant_id, code) 
+    WHERE trip_id IS NULL;
+
+-- Trip override / exclusive add-on: at most 1 override/exclusive per code per specific departure
+CREATE UNIQUE INDEX uq_addon_trip_code 
+    ON product_addons (trip_id, code) 
+    WHERE trip_id IS NOT NULL;
+
+-- Canonical Fallback Resolution Query:
+-- resolved_addon(code) = trip.addon(code) ?? variant.addon(code)
+-- SELECT * FROM (
+--     SELECT DISTINCT ON (code) *
+--     FROM product_addons
+--     WHERE trip_id = :tripId OR (variant_id = :variantId AND trip_id IS NULL)
+--     ORDER BY code, trip_id ASC NULLS LAST
+-- ) resolved_addons
+-- WHERE is_active = TRUE
+-- ORDER BY code ASC;
 
 
 -- =========================================================================
@@ -822,7 +844,8 @@ erDiagram
     product_variants      ||--o{ product_trips             : "variant_id"
     product_trips         ||--o{ product_trip_pricings      : "trip_id"
     product_trip_pricings ||--o{ product_pricing_components: "pricing_id"
-    product_variants      ||--o{ product_addons            : "variant_id (optional extras)"
+    product_variants      ||--o{ product_addons            : "variant_id (default master extras)"
+    product_trips         ||--o{ product_addons            : "trip_id (trip override / exclusive)"
     product_variants      ||--o{ product_variant_badges    : "variant_id"
     product_badges        ||--o{ product_variant_badges    : "badge_id"
 
@@ -938,14 +961,16 @@ erDiagram
 | `comp_std_03` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Airport Shuttle & Private Coach | 2,500,000.00 | TRUE | Private luxury coach for all inter-city transfers |
 | `comp_std_04` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Tour Leader & Driver Tipping | 1,500,000.00 | TRUE | Full tour duration tipping for Indonesian Tour Leader & European driver |
 
-**Sample Add-ons (`product_addons`) under Variant `var_gwe_std_26`:**
+**Sample Add-ons (`product_addons`) — Variant Default vs Trip Override / Exclusive:**
 
-| id | variant_id | trip_id | code | name | addon_type | charge_type | price | applicable_age_band | is_mandatory |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `addon_gwe_01` | `var_gwe_std_26` | NULL | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri) | `SINGLE_ROOM` | `PER_ROOM` | 8500000.00 | `ADULT` | `FALSE` |
-| `addon_gwe_02` | `var_gwe_std_26` | NULL | `ADDON-TITLIS-ICEFLYER` | Mount Titlis Rotair Cable Car & Ice Flyer Experience | `EXPERIENTIAL_TOUR` | `PER_PAX` | 2400000.00 | `NULL` (ALL) | `FALSE` |
-| `addon_gwe_03` | `var_gwe_std_26` | NULL | `ADDON-EIFFEL-SUMMIT` | Eiffel Tower Top Summit Elevator Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 850000.00 | `NULL` (ALL) | `FALSE` |
-| `addon_gwe_04` | `var_gwe_std_26` | NULL | `ADDON-SCHENGEN-VIP` | Schengen Visa Express Consular Appointment Assistance | `VISA_EXPRESS` | `PER_PAX` | 2500000.00 | `NULL` (ALL) | `FALSE` |
+| id | variant_id | trip_id | code | name | addon_type | charge_type | price | applicable_age_band | is_mandatory | notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `addon_gwe_01` | `var_gwe_std_26` | NULL | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri) | `SINGLE_ROOM` | `PER_ROOM` | 8500000.00 | `ADULT` | `FALSE` | **VARIANT DEFAULT:** Baseline single room rate |
+| `addon_gwe_02` | `var_gwe_std_26` | NULL | `ADDON-TITLIS-ICEFLYER` | Mount Titlis Rotair Cable Car & Ice Flyer Experience | `EXPERIENTIAL_TOUR` | `PER_PAX` | 2400000.00 | `NULL` (ALL) | `FALSE` | **VARIANT DEFAULT:** Year-round alpine excursion |
+| `addon_gwe_03` | `var_gwe_std_26` | NULL | `ADDON-EIFFEL-SUMMIT` | Eiffel Tower Top Summit Elevator Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 850000.00 | `NULL` (ALL) | `FALSE` | **VARIANT DEFAULT:** Paris summit access |
+| `addon_gwe_04` | `var_gwe_std_26` | NULL | `ADDON-SCHENGEN-VIP` | Schengen Visa Express Consular Appointment Assistance | `VISA_EXPRESS` | `PER_PAX` | 2500000.00 | `NULL` (ALL) | `FALSE` | **VARIANT DEFAULT:** Expedited visa filing |
+| `addon_tlp_ovr_01` | `var_gwe_tlp_26` | `trip_gwe_tlp_01` | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri - Peak Hotel Surcharge) | `SINGLE_ROOM` | `PER_ROOM` | 11500000.00 | `ADULT` | `FALSE` | **TRIP OVERRIDE:** Peak season hotel surcharge for Tulip Festival departure |
+| `addon_tlp_exc_02` | `var_gwe_tlp_26` | `trip_gwe_tlp_01` | `ADDON-KEUKENHOF-VIP` | Keukenhof Flower Parade VIP Grandstand Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 1500000.00 | `NULL` (ALL) | `FALSE` | **TRIP EXCLUSIVE:** Special reserved grandstand seat for Bloemencorso Bollenstreek |
 
 ---
 
@@ -1228,6 +1253,8 @@ flowchart LR
 | `idx_pricings_search`                   | `product_trip_pricings`        | `(trip_id, age_band, selling_price)`                                                             | B-Tree                | Price range filter and starting price lookup        |
 | `idx_pricing_components_pricing_id`     | `product_pricing_components`   | `(pricing_id)`                                                                                   | B-Tree                | Itemized pricing component lookup by pricing tier   |
 | `idx_addons_variant_trip`               | `product_addons`               | `(variant_id, trip_id)`                                                                          | B-Tree                | Add-on lookup by variant and trip                   |
+| `uq_addon_variant_code`                 | `product_addons`               | `(variant_id, code)` WHERE `trip_id IS NULL`                                                     | B-Tree unique partial | Enforce 1 default add-on per code per variant       |
+| `uq_addon_trip_code`                    | `product_addons`               | `(trip_id, code)` WHERE `trip_id IS NOT NULL`                                                    | B-Tree unique partial | Enforce 1 override/exclusive add-on per code per trip|
 | `uq_itinerary_variant_default`          | `product_itineraries`          | `(variant_id)` WHERE `trip_id IS NULL`                                                           | B-Tree unique partial | Enforce 1 master default itinerary per variant      |
 | `uq_itinerary_trip_override`            | `product_itineraries`          | `(trip_id)` WHERE `trip_id IS NOT NULL`                                                          | B-Tree unique partial | Enforce 1 custom override itinerary per trip        |
 | `idx_itinerary_items_itinerary_id`      | `product_itinerary_items`      | `(itinerary_id)`                                                                                 | B-Tree                | Itinerary item lookup by itinerary                  |
