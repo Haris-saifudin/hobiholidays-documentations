@@ -42,7 +42,7 @@ Media usages and supplementary content use `(target_type, target_id)` to target 
 ### 4. Catalog Quota & Nominal Availability (Decoupled Concurrency Locking)
 
 - **Read-Only Availability Representation:** `product_trips.max_quota` and `min_quota` serve as nominal departure capacity limits surfaced to travelers during catalog discovery and on PDP schedules:
-  $$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
+  $$\text{availableSeats} = \max(0, \text{maxQuota} - \text{bookedSeats})$$
 - **Downstream Delegation:** Transactional pessimistic concurrency locking (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are strictly decoupled from the catalog domain and delegated downstream to Phase 3 (Booking & Checkout Domain). Catalog endpoints provide instantaneous O(1) read-only metric evaluation.
 
 ### 5. Safe & Idempotent Catalog Lifecycle (No Hard Cascade Delete Required)
@@ -139,7 +139,7 @@ Hobiholidays enforces a structured, transparent separation across 3 pricing sub-
 1. **All-Inclusive Base Pricing & Itemized Breakdown (`product_trip_pricings` & `product_pricing_components`):**
    - The tier selling price (e.g. `ADULT = IDR 10.000.000`) represents the **bundled package rate**.
    - `product_pricing_components` provides the concrete itemized cost composition explaining to the customer and financial systems exactly what the Adult price covers besides the base departure cost:
-     $$\text{selling\_price} = \text{base\_departure\_amount} + \sum_{i=1}^{n} \text{included\_component\_amount}_i$$
+     $$\text{sellingPrice} = \text{baseDepartureAmount} + \sum_{i=1}^{n} \text{includedComponentAmount}_i$$
      *Real-World Example (GWE Summer Adult = IDR 10.000.000):*
      - **Biaya Keberangkatan & Land Tour:** IDR 9.350.000
      - **Schengen Visa Fee:** IDR 500.000 (`is_included = TRUE`)
@@ -946,7 +946,7 @@ erDiagram
 
 #### Sample `product_pricing_components` (Itemized Breakdown for GWE Summer & Classic)
 
-> Demonstrates what each package price tier covers ($\text{selling\_price} = \text{base\_departure\_amount} + \sum \text{included\_components}$).
+> Demonstrates what each package price tier covers ($\text{sellingPrice} = \text{baseDepartureAmount} + \sum \text{includedComponents}$).
 
 | id | pricing_id | Target Tier & Variant | Component Name | amount (IDR) | is_included | Description / Rationale |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |

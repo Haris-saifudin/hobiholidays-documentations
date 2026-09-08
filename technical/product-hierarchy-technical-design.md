@@ -147,7 +147,7 @@ To preserve data integrity during catalog synchronization from ATW, entities are
 ### 3. Read-Only Catalog Availability & Decoupled Concurrency Locking
 
 `product_trips.max_quota` and `product_trips.min_quota` represent nominal departure capacity limits surfaced to travelers on variant cards and PDP schedules:
-$$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
+$$\text{availableSeats} = \max(0, \text{maxQuota} - \text{bookedSeats})$$
 - **Downstream Delegation:** Real-time pessimistic concurrency locks (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are strictly decoupled from the catalog domain and delegated downstream to Phase 3 (Booking & Checkout Domain).
 - **Seat Allocation Classification:** `product_trip_pricings.consumes_quota` (`BOOLEAN NOT NULL DEFAULT TRUE`) categorizes seat consumption for reporting and catalog display (`ADULT` = `TRUE`, `INFANT` = configurable).
 
@@ -170,7 +170,7 @@ The **Itinerary Subsystem** (`product_itineraries` and `product_itinerary_items`
 - **Variant Master Default (`trip_id IS NULL`):** Every tour variant maintains exactly one authoritative master itinerary. This baseline itinerary defines the standard day-by-day schedule, attractions, transport, and meal arrangements shared across all standard dated departures under that variant.
 - **Trip Date-Specific Override (`trip_id IS NOT NULL`):** Specific departures may face calendar events (such as the Keukenhof Flower Parade on a specific Saturday, local national holidays, temporary venue closures, or seasonal routing). Instead of creating a duplicate variant, an operational team attaches a custom trip override itinerary to that specific `trip_id`.
 - **Atomic Program Replacement Semantics:** Unlike add-ons (which resolve independently per code), itineraries are resolved as an **atomic, cohesive unit**. When a trip defines an override itinerary, the system substitutes the entire schedule:
-  $$\text{effective\_itinerary} = \text{trip.itinerary} \mathbin{??} \text{variant.itinerary}$$
+  $$\text{effectiveItinerary} = \text{trip.itinerary} \mathbin{??} \text{variant.itinerary}$$
   If a trip has its own itinerary record, all day-by-day items are loaded exclusively from that record; it does not merge or stitch individual days from the master variant.
 
 #### Relational Schema & Database Integrity
@@ -318,7 +318,7 @@ The **Add-on Subsystem** (`product_addons`) manages elective traveler upgrades, 
 
 #### Per-Code Fallback Resolution Mechanics
 Unlike the Itinerary Subsystem (which resolves as an all-or-nothing single schedule replacement), Add-ons resolve **item-by-item across the unique `code` set**. For each functional code, a departure-specific record supersedes the variant default:
-$$\forall \text{code}: \text{resolved\_addon}(\text{code}) = \text{trip.addon}(\text{code}) \mathbin{??} \text{variant.addon}(\text{code})$$
+$$\forall \text{code}: \text{resolvedAddon}(\text{code}) = \text{trip.addon}(\text{code}) \mathbin{??} \text{variant.addon}(\text{code})$$
 
 This granular resolution ensures that overriding a single add-on (such as a peak-season single room surcharge) does not require duplicating or re-declaring all other standard add-on options.
 
@@ -373,12 +373,12 @@ ORDER BY code ASC;
 
 #### Checkout Calculation & Billing Governance
 During booking checkout, the platform calculates total add-on liabilities based on `charge_type`:
-$$\text{Total Addon Cost} = \sum_{a \in \text{selected\_addons}} \text{CalculateAddonCharge}(a, \text{party})$$
+$$\text{Total Addon Cost} = \sum_{a \in \text{selectedAddons}} \text{CalculateAddonCharge}(a, \text{party})$$
 
 | `charge_type` | Computation Formula | Typical Use Case |
 | :--- | :--- | :--- |
-| **`PER_PAX`** | $\text{price} \times \text{eligible\_passengers} \times \text{quantity}$ | Excursions (Titlis Rotair, Eiffel Summit), Travel Insurance, Visa Express |
-| **`PER_ROOM`** | $\text{price} \times \text{number\_of\_rooms} \times \text{quantity}$ | Single Room Supplement (`ADDON-SINGLE-SUPP`), Hotel Room Category Upgrades |
+| **`PER_PAX`** | $\text{price} \times \text{eligiblePassengers} \times \text{quantity}$ | Excursions (Titlis Rotair, Eiffel Summit), Travel Insurance, Visa Express |
+| **`PER_ROOM`** | $\text{price} \times \text{numberOfRooms} \times \text{quantity}$ | Single Room Supplement (`ADDON-SINGLE-SUPP`), Hotel Room Category Upgrades |
 | **`PER_BOOKING`** | $\text{price} \times \text{quantity}$ | Private airport transfer vehicle booking, expedited group document dispatch |
 
 ### 8. All-Inclusive Base Pricing, Itemized Component Breakdown & Excluded Add-on Architecture
@@ -386,7 +386,7 @@ $$\text{Total Addon Cost} = \sum_{a \in \text{selected\_addons}} \text{Calculate
 Hobiholidays establishes clear architectural boundaries between bundled cost components, elective upgrades, and marketing copy:
 
 - **All-Inclusive Tier Selling Price (`product_trip_pricings`):** The effective bookable rate per passenger age band (e.g. `ADULT = IDR 10.000.000`).
-- **Bundled Itemized Components (`product_pricing_components`):** Explains exactly what the package tier covers besides base departure costs ($\text{selling\_price} = \text{base\_departure\_amount} + \sum \text{included\_components}$). In GWE Summer Adult (IDR 10M), this details:
+- **Bundled Itemized Components (`product_pricing_components`):** Explains exactly what the package tier covers besides base departure costs ($\text{sellingPrice} = \text{baseDepartureAmount} + \sum \text{includedComponents}$). In GWE Summer Adult (IDR 10M), this details:
   - *Biaya Keberangkatan & Land Tour:* IDR 9.350.000
   - *Schengen Visa Fee:* IDR 500.000 (`is_included = TRUE`)
   - *Airport Shuttle & Transfer:* IDR 100.000 (`is_included = TRUE`)

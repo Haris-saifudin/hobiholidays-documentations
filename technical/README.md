@@ -49,7 +49,7 @@ All data models within this repository adhere to the following PostgreSQL 16+ en
 
 ### 4. Decoupled Booking Concurrency & Read-Only Nominal Availability
 - Catalog discovery endpoints and PDP departure calendars surface nominal seat availability metrics:
-  $$\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$$
+  $$\text{availableSeats} = \max(0, \text{maxQuota} - \text{bookedSeats})$$
 - Transactional pessimistic locks (`SELECT ... FOR UPDATE`), mutex quota deductions, and lock TTL mechanisms are decoupled from the catalog domain and delegated downstream to Phase 3 (Booking & Checkout Domain).
 
 ### 5. Enumerations & Domain Constraints

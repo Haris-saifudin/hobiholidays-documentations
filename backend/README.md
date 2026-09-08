@@ -135,7 +135,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 ```
 
 ### 4. Database Transaction Management
-To maintain atomicity across multi-table catalog operations (e.g. creating a Product + initial Journey row, or publishing Variant editions), services execute operations within database transactions. Note that in the Phase 1 Catalog domain, departure seat availability is computed purely as a read-only nominal metric ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$); transactional checkout reservations and pessimistic concurrency locking are delegated downstream to Phase 3 (Booking Domain).
+To maintain atomicity across multi-table catalog operations (e.g. creating a Product + initial Journey row, or publishing Variant editions), services execute operations within database transactions. Note that in the Phase 1 Catalog domain, departure seat availability is computed purely as a read-only nominal metric ($\text{availableSeats} = \max(0, \text{maxQuota} - \text{bookedSeats})$); transactional checkout reservations and pessimistic concurrency locking are delegated downstream to Phase 3 (Booking Domain).
 
 ```typescript
 import { DataSource } from 'typeorm';
