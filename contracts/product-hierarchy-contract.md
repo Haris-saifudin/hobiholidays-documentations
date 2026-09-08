@@ -300,7 +300,7 @@ Returns the aggregated payload required to render the full tour detail page (`/t
     ],
     "itinerary": {
       "variantId": "550e8400-e29b-41d4-a716-446655440020",
-      "title": "Master Default Itinerary 11D/9N",
+      "title": "7D/6N Spring Blossom Western Europe",
       "days": [
         {
           "dayNumber": 1,
@@ -408,7 +408,7 @@ Returns the aggregated payload required to render the full tour detail page (`/t
       }
     ],
     "seo": {
-      "metaTitle": "Tour GWE Spring 2026 (11D/9N) Eropa Barat Murah | Hobiholidays",
+      "metaTitle": "Tour GWE Spring 2026 (7D/6N) Eropa Barat Murah | Hobiholidays",
       "metaDescription": "Nikmati keindahan musim semi di Belanda, Belgia, dan Prancis bersama paket tour GWE Spring 2026. Keberangkatan April 2026.",
       "canonicalUrl": "https://www.hobiholidays.com/tours/grand-west-europe/gwe-spring-2026",
       "ogImageUrl": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",

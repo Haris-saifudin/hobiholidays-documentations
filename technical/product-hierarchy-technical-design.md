@@ -38,35 +38,58 @@ products  (master brand / program umbrella + Multi-Dimensional Product-level cat
 ```
 products [prod_gwe_01] (Grand West Europe)
 ├── Multi-Dimensional Product Categories (L1 - Inherited by all variants):
-│   ├── Format Operasional: Paket Tour / Open Trip (Primary)
-│   ├── Tema Wisata: Cultural & Wonders (Primary)
-│   └── Preferensi Layanan: Halal / Muslim Friendly (Primary)
-├── Base Duration: 11 Hari 9 Malam
+│   ├── Format Operasional (Travel Style): Popular Group Tours (Primary) [Parent: Travel Style]
+│   ├── Tema Wisata (Theme & Interest): Cultural & Wonders (Primary)
+│   └── Preferensi Layanan (Special Experience): Halal / Muslim Friendly (Primary)
+├── Base Duration: 7 Hari 6 Malam
 │
 ├── product_variants (Each variant is strictly one card on All Tours)
-│   ├── GWE Classic 11D      [var_gwe_std] (STANDARD)    ← card 1: Core recurring package
+│   ├── GWE Classic All-Year [var_gwe_std_26]  (variant_type = 'STANDARD')    ← card 1: Core recurring package
 │   │     ├── Badges / Tags: 🔥 Best Seller
-│   │     ├── Categories: Inherits Product L1 categories
-│   │     ├── Default Itinerary: 11D Western Europe (Zurich, Paris, Milan, Black Forest)
-│   │     └── product_trips: 14 – 24 Okt 2026 (max 30 pax, Rp 29.5M, Sisa 4 seat)
+│   │     ├── Default Itinerary: 7D/6N Western Europe Classic Program (Amsterdam, Paris, Swiss Alps)
+│   │     ├── Add-ons: Single Supplement (Rp 8.5M), Mount Titlis & Ice Flyer (Rp 2.4M)
+│   │     └── product_trips: 05 Aug 2026 → 11 Aug 2026 (max 30 pax)
+│   │           └── All-Inclusive Pricings & Age Bands:
+│   │                 ├── ADULT: Rp 28.5M (consumes_quota = TRUE) [All-inclusive base package]
+│   │                 └── INFANT: Rp 6.5M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
 │   │
-│   ├── GWE Autumn Flash     [var_gwe_fls] (PROMOTIONAL) ← card 2: Autumn Promo Campaign
-│   │     ├── Badges / Tags: ⚡ Flash Sale (Rp 24.9M)
-│   │     ├── Variant Categories: Season -> Autumn Leaves & Foliage (Primary), Collection -> ⚡ Flash Sale (Primary)
+│   ├── GWE Spring 2026      [var_gwe_spr_26]  (variant_type = 'SEASONAL')    ← card 2: Spring season series
+│   │     ├── Badges / Tags: 🌸 Spring Edition
+│   │     ├── Variant Categories: Season -> Spring & Sakura Season (Primary)
+│   │     ├── Default Itinerary: 7D/6N Spring Blossom Western Europe
+│   │     └── product_trips: 10 Sept 2026 → 16 Sept 2026 (max 30 pax)
+│   │           ├── Itinerary: Inherits Variant Default Itinerary
+│   │           └── All-Inclusive Pricings & Age Bands:
+│   │                 ├── ADULT: Rp 28.0M (consumes_quota = TRUE)
+│   │                 └── INFANT: Rp 6.5M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
 │   │
-│   ├── GWE Nataru Edition   [var_gwe_ntr] (SEASONAL)    ← card 3: Year-End Peak Holiday
-│   │     ├── Badges / Tags: 🎄 NATARU
-│   │     ├── Variant Categories: Season -> Natal & Tahun Baru (NATARU) (Primary)
-│   │     └── product_trips: 20 – 30 Des 2026 (max 25 pax, Rp 35.9M)
+│   ├── GWE Summer 2026      [var_gwe_sum_26]  (variant_type = 'SEASONAL')    ← card 3: Summer school holiday
+│   │     ├── Badges / Tags: ☀️ Summer Holiday
+│   │     ├── Variant Categories: Season -> Summer Holiday (Primary)
+│   │     ├── Default Itinerary: 7D/6N Western Europe Summer Vacation Program
+│   │     └── product_trips: 10 Jul 2026 → 16 Jul 2026 (max 35 pax)
+│   │           ├── Itinerary: Inherits Variant Default Itinerary
+│   │           └── All-Inclusive Pricings & Age Bands:
+│   │                 ├── ADULT: Rp 29.5M (consumes_quota = TRUE)
+│   │                 └── INFANT: Rp 6.5M (consumes_quota = FALSE)
 │   │
-│   ├── GWE Spring Keukenhof [var_gwe_tlp] (THEMED)      ← card 4: Keukenhof Tulip Edition
+│   ├── GWE Tulip Keukenhof  [var_gwe_tlp_26]  (variant_type = 'THEMED')      ← card 4: Keukenhof tulip festival
 │   │     ├── Badges / Tags: 🌷 Tulip Edition
 │   │     ├── Variant Categories: Season -> Spring & Sakura Season, Theme -> Sakura & Flower Blooms (Primary)
-│   │     └── Duration Override: 12 Hari 10 Malam
+│   │     └── product_trips: 15 Apr 2026 → 21 Apr 2026 (max 25 pax)
+│   │           ├── Itinerary: OVERRIDE -> 7D/6N Tulip Special Keukenhof Peak Itinerary
+│   │           └── All-Inclusive Pricings & Age Bands:
+│   │                 ├── ADULT: Rp 31.0M (consumes_quota = TRUE)
+│   │                 └── INFANT: Rp 7.0M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
 │   │
-│   └── GWE Early Bird 2026  [var_gwe_eb]  (PROMOTIONAL) ← card 5: Early Bird Booking Campaign
+│   └── Early Bird Europe    [var_gwe_eb_26]   (variant_type = 'PROMOTIONAL') ← card 5: Flash promotional package
 │         ├── Badges / Tags: ⚡ Early Bird
-│         └── Variant Categories: Collection -> ⚡ Early Bird Specials (Primary)
+│         ├── Variant Categories: Theme -> Cultural & Wonders (Primary)
+│         └── product_trips: 01 Nov 2026 → 07 Nov 2026 (max 20 pax)
+│               ├── Itinerary: Inherits Variant Default Itinerary
+│               └── All-Inclusive Pricings & Age Bands:
+│                     ├── ADULT: Rp 24.9M (consumes_quota = TRUE)
+│                     └── INFANT: Rp 6.0M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
 ```
 
 **Key rules:**
@@ -81,9 +104,9 @@ products [prod_gwe_01] (Grand West Europe)
 
 | `variant_type`    | Purpose & Characteristics                                                                                | Real-World Example in Hobiholidays                              | UI Badging on All Tours Card            |
 | ----------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------- |
-| **`STANDARD`**    | Core year-round package with fixed recurring departures; unaffected by seasonal or promotional gimmicks. | _GWE Classic 11D_, _GWE Signature All-Year_                      | None / `⭐ Classic`                     |
-| **`SEASONAL`**    | Tied strictly to natural seasons & regional climate windows (Spring, Summer, Autumn, Winter).            | _GWE Spring 2026_, _GWE Summer Keukenhof_, _Swiss Winter Alps_  | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` |
-| **`THEMED`**      | Centered around special events, foliage, festivals, or cultural attractions.                             | _Tulip Edition (Keukenhof)_, _Swiss Glacier Wonderland_         | `🌷 Tulip Edition` / `🎌 Festival`      |
+| **`STANDARD`**    | Core year-round package with fixed recurring departures; unaffected by seasonal or promotional gimmicks. | _GWE Classic All-Year_, _GWE Signature All-Year_                 | None / `⭐ Classic` / `🔥 Best Seller`   |
+| **`SEASONAL`**    | Tied strictly to natural seasons & regional climate windows (Spring, Summer, Autumn, Winter).            | _GWE Spring 2026_, _GWE Summer 2026_, _Swiss Winter Alps_       | `🌸 Spring` / `☀️ Summer` / `❄️ Winter`  |
+| **`THEMED`**      | Centered around special events, foliage, festivals, or cultural attractions.                             | _GWE Tulip Keukenhof_, _Swiss Glacier Wonderland_               | `🌷 Tulip Edition` / `🎌 Festival`      |
 | **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns.                          | _Early Bird Europe 2026_, _Flash Sale GWE IDR 24.9M_             | `🔥 Flash Sale` / `⚡ Early Bird`       |
 
 ---
@@ -272,9 +295,13 @@ erDiagram
         uuid       trip_id             FK
         varchar    code                "ADDON-SINGLE-SUPP"
         varchar    name                "Single Supplement"
+        varchar    addon_type          "SINGLE_ROOM | BAGGAGE | FLIGHT_UPGRADE | EXPERIENTIAL_TOUR | INSURANCE | VISA_EXPRESS | SPECIAL_MEAL"
         varchar    charge_type         "PER_PAX | PER_ROOM | PER_BOOKING"
         varchar    applicable_age_band "ALL | ADULT | INFANT"
         decimal    price
+        boolean    is_mandatory        "false | true"
+        int        max_quantity        "1"
+        boolean    is_active           "true"
     }
 ```
 ---
@@ -468,9 +495,13 @@ erDiagram
         uuid      trip_id             FK  "FK -> product_trips.id (optional trip override)"
         varchar   code                UK  "Addon code (e.g. ADDON-SINGLE-SUPP)"
         varchar   name                    "Addon title (e.g. Single Supplement Room)"
+        varchar   addon_type              "SINGLE_ROOM | BAGGAGE | FLIGHT_UPGRADE | EXPERIENTIAL_TOUR | INSURANCE | VISA_EXPRESS | SPECIAL_MEAL"
         varchar   charge_type             "PER_PAX | PER_ROOM | PER_BOOKING"
         varchar   applicable_age_band     "ALL | ADULT | INFANT"
         decimal   price                   "Addon price in IDR"
+        boolean   is_mandatory            "Enforce mandatory inclusion (default false)"
+        int       max_quantity            "Max purchasable units"
+        boolean   is_active               "Active status flag"
     }
 
     %% =========================================================================
@@ -666,7 +697,7 @@ flowchart LR
 
 ---
 
-## 📋 Sample Data — Grand West Europe (GWE)
+### 📋 Sample Data — Grand West Europe (GWE)
 
 > _(Note: Standard audit timestamps `created_at`, `updated_at`, and `deleted_at` are defined in the schema and ERDs above, but omitted from the sample data tables below for readability)._
 
@@ -683,10 +714,11 @@ flowchart LR
 
 | id | dimension_id | parent_id | name | slug |
 | :--- | :--- | :--- | :--- | :--- |
-| `cat_open_group` | `dim_travel_style` | NULL | Paket Tour / Open Trip | open-group-tour |
-| `cat_private_trip` | `dim_travel_style` | NULL | Private Trip | private-trip |
-| `cat_corporate_mice` | `dim_travel_style` | NULL | Corporate & MICE | corporate-mice |
-| `cat_signature_premium` | `dim_travel_style` | NULL | Signature 5-Star Tour | signature-5star-tour |
+| `cat_travel_style` | `dim_travel_style` | NULL | Travel Style | travel-style |
+| `cat_pop_group_tours` | `dim_travel_style` | `cat_travel_style` | Popular Group Tours | popular-group-tours |
+| `cat_private_trip` | `dim_travel_style` | `cat_travel_style` | Private Trip | private-trip |
+| `cat_corporate_mice` | `dim_travel_style` | `cat_travel_style` | Corporate & MICE | corporate-mice |
+| `cat_signature_premium` | `dim_travel_style` | `cat_travel_style` | Signature 5-Star Tour | signature-5star-tour |
 | `cat_cultural_wonders` | `dim_theme` | NULL | Cultural & Wonders | cultural-wonders |
 | `cat_nature_scenic` | `dim_theme` | NULL | Nature & Alpine Scenery | nature-alpine-scenery |
 | `cat_flower_bloom` | `dim_theme` | NULL | Sakura & Flower Blooms | sakura-flower-blooms |
@@ -709,26 +741,36 @@ flowchart LR
 | :--- | :--- | :--- | :--- | :--- |
 | `prod_gwe_01` | JOURNEY | GWE-MASTER | grand-west-europe | ACTIVE |
 
+### `product_journeys` (L1 Master Duration Base)
+
+| product_id | duration_days | duration_nights |
+| :--- | :--- | :--- |
+| `prod_gwe_01` | 7 | 6 |
+
 ### `product_category_assignments` (Multi-Dimensional Product & Variant Mappings)
 
 | id | product_id | variant_id | category_id | Category Name | Dimension | is_primary | Level & Target |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `pca_01` | `prod_gwe_01` | **NULL** | `cat_open_group` | Paket Tour / Open Trip | `TRAVEL_STYLE` | **TRUE** | **L1: Product Umbrella (Grand West Europe)** |
+| `pca_01` | `prod_gwe_01` | **NULL** | `cat_pop_group_tours` | Popular Group Tours | `TRAVEL_STYLE` | **TRUE** | **L1: Product Umbrella (Grand West Europe)** |
 | `pca_02` | `prod_gwe_01` | **NULL** | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L1: Product Umbrella (Grand West Europe)** |
 | `pca_03` | `prod_gwe_01` | **NULL** | `cat_halal_friendly` | Halal / Muslim Friendly | `SPECIAL_EXPERIENCE` | **TRUE** | **L1: Product Umbrella (Grand West Europe)** |
-| `pca_04` | `prod_gwe_01` | `var_gwe_std` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_std` Classic 11D)** |
-| `pca_05` | `prod_gwe_01` | `var_gwe_fls` | `cat_autumn_foliage` | Autumn Leaves & Foliage | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_fls` Autumn Flash)** |
-| `pca_06` | `prod_gwe_01` | `var_gwe_ntr` | `cat_nataru` | Natal & Tahun Baru (NATARU) | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_ntr` Nataru Edition)** |
-| `pca_07` | `prod_gwe_01` | `var_gwe_tlp` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | FALSE | **L2: Variant (`var_gwe_tlp` Tulip Edition)** |
-| `pca_08` | `prod_gwe_01` | `var_gwe_tlp` | `cat_flower_bloom` | Sakura & Flower Blooms | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_tlp` Tulip Edition)** |
+| `pca_04` | `prod_gwe_01` | `var_gwe_std_26` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_std_26` Classic All-Year)** |
+| `pca_05` | `prod_gwe_01` | `var_gwe_spr_26` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_spr_26` Spring 2026)** |
+| `pca_06` | `prod_gwe_01` | `var_gwe_sum_26` | `cat_summer_holiday` | Summer Holiday | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_sum_26` Summer 2026)** |
+| `pca_07` | `prod_gwe_01` | `var_gwe_tlp_26` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | FALSE | **L2: Variant (`var_gwe_tlp_26` Tulip Keukenhof)** |
+| `pca_08` | `prod_gwe_01` | `var_gwe_tlp_26` | `cat_flower_bloom` | Sakura & Flower Blooms | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_tlp_26` Tulip Keukenhof)** |
+| `pca_09` | `prod_gwe_01` | `var_gwe_eb_26` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_eb_26` Early Bird Europe)** |
 
 ### `product_badges` (Visual Floating Marketing Labels)
 
 | id | code | label | background_color | text_color | icon_url | is_active |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `badge_best_seller` | `BEST_SELLER` | 🔥 Best Seller | `#004FC0` | `#FFFFFF` | NULL | TRUE |
-| `badge_flash_sale` | `FLASH_SALE` | ⚡ Flash Sale | `#E8352A` | `#FFFFFF` | NULL | TRUE |
+| `badge_spring` | `SPRING_EDITION` | 🌸 Spring Edition | `#FDF2F8` | `#9D174D` | NULL | TRUE |
+| `badge_summer` | `SUMMER_HOLIDAY` | ☀️ Summer Holiday | `#FEF3C7` | `#92400E` | NULL | TRUE |
+| `badge_tulip` | `TULIP_SPECIAL` | 🌷 Tulip Edition | `#F0FDF4` | `#166534` | NULL | TRUE |
 | `badge_early_bird` | `EARLY_BIRD` | ⚡ Early Bird | `#FFA80F` | `#0A1426` | NULL | TRUE |
+| `badge_flash_sale` | `FLASH_SALE` | ⚡ Flash Sale | `#E8352A` | `#FFFFFF` | NULL | TRUE |
 | `badge_populer` | `POPULER` | ✨ Populer | `#FFA80F` | `#0A1426` | NULL | TRUE |
 | `badge_premium` | `PREMIUM` | ⭐ Premium | `#0A1426` | `#FFA80F` | NULL | TRUE |
 | `badge_baru` | `BARU` | 🆕 Baru | `#188a42` | `#FFFFFF` | NULL | TRUE |
@@ -737,15 +779,11 @@ flowchart LR
 
 | variant_id | badge_id | Applied Variant Card | Visual Presentation on Storefront |
 | :--- | :--- | :--- | :--- |
-| `var_gwe_std` | `badge_best_seller` | Grand Europe Tour 11 Hari | Blue pill `🔥 Best Seller` on top-left card thumbnail & PDP header |
-| `var_gwe_fls` | `badge_flash_sale` | Autumn di Switzerland Flash Sale | Red pill `⚡ Flash Sale` with countdown timer banner |
-| `var_gwe_eb` | `badge_early_bird` | Early Bird Europe 2026 | Orange pill `⚡ Early Bird` |
-
-### `product_journeys`
-
-| product_id | duration_days | duration_nights |
-| :--- | :--- | :--- |
-| `prod_gwe_01` | 11 | 9 |
+| `var_gwe_std_26` | `badge_best_seller` | GWE Classic All-Year | Blue pill `🔥 Best Seller` on top-left card thumbnail & PDP header |
+| `var_gwe_spr_26` | `badge_spring` | GWE Spring 2026 | Pink pill `🌸 Spring Edition` |
+| `var_gwe_sum_26` | `badge_summer` | GWE Summer 2026 | Yellow pill `☀️ Summer Holiday` |
+| `var_gwe_tlp_26` | `badge_tulip` | GWE Tulip Keukenhof | Green pill `🌷 Tulip Edition` |
+| `var_gwe_eb_26` | `badge_early_bird` | Early Bird Europe | Orange pill `⚡ Early Bird` |
 
 ---
 
@@ -753,13 +791,13 @@ flowchart LR
 
 | id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `var_gwe_std` | `prod_gwe_01` | STANDARD | Grand Europe Tour 11 Hari | grand-europe-tour-11d | GWE-STD-2026 | NULL (11) | NULL (9) | ACTIVE |
-| `var_gwe_fls` | `prod_gwe_01` | PROMOTIONAL | Autumn di Switzerland Flash Sale | autumn-switzerland-flash | GWE-FLS-2026 | NULL (11) | NULL (9) | ACTIVE |
-| `var_gwe_ntr` | `prod_gwe_01` | SEASONAL | Grand Europe NATARU 2026 | grand-europe-nataru-2026 | GWE-NTR-2026 | NULL (11) | NULL (9) | ACTIVE |
-| `var_gwe_tlp` | `prod_gwe_01` | THEMED | Grand Europe Keukenhof Tulip | grand-europe-tulip-2026 | GWE-TLP-2026 | 12 (override) | 10 (override) | ACTIVE |
-| `var_gwe_eb` | `prod_gwe_01` | PROMOTIONAL | Early Bird Europe 2026 | early-bird-europe-2026 | GWE-EB-2026 | NULL (11) | NULL (9) | ACTIVE |
+| `var_gwe_std_26` | `prod_gwe_01` | STANDARD | GWE Classic All-Year | gwe-classic-all-year | GWE-STD-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `var_gwe_spr_26` | `prod_gwe_01` | SEASONAL | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `var_gwe_sum_26` | `prod_gwe_01` | SEASONAL | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `var_gwe_tlp_26` | `prod_gwe_01` | THEMED | GWE Tulip Keukenhof | gwe-tulip-keukenhof | GWE-TLP-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `var_gwe_eb_26` | `prod_gwe_01` | PROMOTIONAL | Early Bird Europe | early-bird-europe-2026 | GWE-EB-2026 | NULL (7) | NULL (6) | ACTIVE |
 
-> 💡 `NULL` duration_days means the variant **inherits** from `product_journeys` via `COALESCE`.
+> 💡 `NULL` duration_days means the variant **inherits** from `product_journeys` (7D/6N) via `COALESCE`.
 > **All Tours** page renders **5 cards** — one per variant across all 4 `variant_type` classifications.
 
 ---
@@ -768,12 +806,11 @@ flowchart LR
 
 | id | variant_id | start_date | end_date | min_quota | max_quota | status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `trip_std_01` | `var_gwe_std` | 2026-10-14 | 2026-10-24 | 15 | 30 | ACTIVE |
-| `trip_std_02` | `var_gwe_std` | 2026-10-25 | 2026-11-04 | 15 | 30 | ACTIVE |
-| `trip_std_03` | `var_gwe_std` | 2026-11-08 | 2026-11-18 | 15 | 30 | ACTIVE |
-| `trip_ntr_01` | `var_gwe_ntr` | 2026-12-20 | 2026-12-30 | 15 | 25 | ACTIVE |
-| `trip_tlp_01` | `var_gwe_tlp` | 2026-04-15 | 2026-04-27 | 15 | 25 | ACTIVE |
-| `trip_fls_01` | `var_gwe_fls` | 2026-09-10 | 2026-09-20 | 10 | 20 | ACTIVE |
+| `trip_gwe_std_01` | `var_gwe_std_26` | 2026-08-05 | 2026-08-11 | 15 | 30 | ACTIVE |
+| `trip_gwe_spr_01` | `var_gwe_spr_26` | 2026-09-10 | 2026-09-16 | 15 | 30 | ACTIVE |
+| `trip_gwe_sum_01` | `var_gwe_sum_26` | 2026-07-10 | 2026-07-16 | 20 | 35 | ACTIVE |
+| `trip_gwe_tlp_01` | `var_gwe_tlp_26` | 2026-04-15 | 2026-04-21 | 15 | 25 | ACTIVE |
+| `trip_gwe_eb_01` | `var_gwe_eb_26` | 2026-11-01 | 2026-11-07 | 10 | 20 | ACTIVE |
 
 ---
 
@@ -781,18 +818,34 @@ flowchart LR
 
 | id | trip_id | age_band | consumes_quota | base_price | selling_price |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `price_std_adult` | `trip_std_01` | ADULT | TRUE | 34500000.00 | 29500000.00 |
-| `price_std_infant` | `trip_std_01` | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
-| `price_ntr_adult` | `trip_ntr_01` | ADULT | TRUE | 39000000.00 | 35900000.00 |
-| `price_tlp_adult` | `trip_tlp_01` | ADULT | TRUE | 36000000.00 | 32000000.00 |
-| `price_fls_adult` | `trip_fls_01` | ADULT | TRUE | 31000000.00 | 24900000.00 |
+| `pricing_std_ad` | `trip_gwe_std_01` | ADULT | TRUE | 32000000.00 | 28500000.00 |
+| `pricing_std_inf` | `trip_gwe_std_01` | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
+| `pricing_spr_ad` | `trip_gwe_spr_01` | ADULT | TRUE | 31500000.00 | 28000000.00 |
+| `pricing_spr_inf` | `trip_gwe_spr_01` | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
+| `pricing_sum_ad` | `trip_gwe_sum_01` | ADULT | TRUE | 33500000.00 | 29500000.00 |
+| `pricing_sum_inf` | `trip_gwe_sum_01` | INFANT | FALSE | 8000000.00 | 6500000.00 |
+| `pricing_tlp_ad` | `trip_gwe_tlp_01` | ADULT | TRUE | 35000000.00 | 31000000.00 |
+| `pricing_tlp_inf` | `trip_gwe_tlp_01` | INFANT | FALSE (or TRUE if seat allocated) | 8500000.00 | 7000000.00 |
+| `pricing_eb_ad` | `trip_gwe_eb_01` | ADULT | TRUE | 30000000.00 | 24900000.00 |
+| `pricing_eb_inf` | `trip_gwe_eb_01` | INFANT | FALSE | 7500000.00 | 6000000.00 |
 
 ### `product_addons` (Optional Extras for Variant `var_gwe_std_26`)
 
-| id | variant_id | trip_id | code | name | charge_type | price | applicable_age_band | is_mandatory |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| addon_gwe_01 | var_gwe_std_26 | NULL | ADDON-SINGLE-SUPP | Single Supplement (Kamar Sendiri) | PER_ROOM | 8500000.00 | ADULT | FALSE |
-| addon_gwe_02 | var_gwe_std_26 | NULL | ADDON-EXTRA-BAG-10KG| Bagasi Ekstra +10kg | PER_PAX | 1500000.00 | NULL (ALL) | FALSE |
+| id | variant_id | trip_id | code | name | addon_type | charge_type | price | applicable_age_band | is_mandatory |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `addon_gwe_01` | `var_gwe_std_26` | NULL | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri) | `SINGLE_ROOM` | `PER_ROOM` | 8500000.00 | `ADULT` | `FALSE` |
+| `addon_gwe_02` | `var_gwe_std_26` | NULL | `ADDON-TITLIS-ICEFLYER` | Mount Titlis Rotair Cable Car & Ice Flyer Experience | `EXPERIENTIAL_TOUR` | `PER_PAX` | 2400000.00 | `NULL` (ALL) | `FALSE` |
+| `addon_gwe_03` | `var_gwe_std_26` | NULL | `ADDON-EIFFEL-SUMMIT` | Eiffel Tower Top Summit Elevator Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 850000.00 | `NULL` (ALL) | `FALSE` |
+| `addon_gwe_04` | `var_gwe_std_26` | NULL | `ADDON-SCHENGEN-VIP` | Schengen Visa Express Consular Appointment Assistance | `VISA_EXPRESS` | `PER_PAX` | 2500000.00 | `NULL` (ALL) | `FALSE` |
+
+### `product_itineraries` (Variant Default vs Trip Override)
+
+| id | variant_id | trip_id | itinerary_type | title | summary |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `itin_var_std_01` | `var_gwe_std_26` | NULL | `STANDARD` | 7D/6N Western Europe Classic Program (Amsterdam, Paris, Swiss Alps) | Variant default master itinerary covering Amsterdam, Paris, and Swiss Alps. |
+| `itin_var_spr_01` | `var_gwe_spr_26` | NULL | `STANDARD` | 7D/6N Spring Blossom Western Europe | Variant default spring blooming season itinerary. |
+| `itin_var_sum_01` | `var_gwe_sum_26` | NULL | `STANDARD` | 7D/6N Western Europe Summer Vacation Program | Variant default summer holiday program. |
+| `itin_trip_tlp_ovr` | `var_gwe_tlp_26` | `trip_gwe_tlp_01` | `CUSTOM` | 7D/6N Tulip Special Keukenhof Peak Itinerary | **TRIP OVERRIDE:** Special peak-season Tulip Flower Parade & Keukenhof VIP program. |
 
 ---
 

@@ -143,9 +143,9 @@ Categorizes bookable cards surfaced on the **All Tours** storefront. In Hobiholi
 
 | `variant_type`    | Architectural & Business Role                                                                                       | Real-World Example in Hobiholidays                                                  | Frontend UI Badge                       | Catalog Filter Tag         |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
-| **`STANDARD`**    | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | _GWE Classic 11D_, _Grand Europe Signature 11D_                                      | None / `⭐ Classic`                     | "Regular Packages"         |
-| **`SEASONAL`**    | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter).    | _GWE Spring 2026_, _GWE Summer Keukenhof_, _Swiss Winter Alps_                      | `🌸 Spring` / `🍂 Autumn` / `❄️ Winter` | "Spring / Autumn / Winter" |
-| **`THEMED`**      | Centered around cultural festivals, flower blooms, sports events, or special attractions.                           | _Tulip Edition (Keukenhof)_, _Swiss Glacier Wonderland_, _Christmas Market Tour_     | `🌷 Tulip Edition` / `🎌 Festival`      | "Themed & Events"          |
+| **`STANDARD`**    | Core year-round package with regular recurring departures. Unaffected by specific seasonal or promotional gimmicks. | _GWE Classic All-Year_, _Grand Europe Signature 7D_                                 | None / `⭐ Classic` / `🔥 Best Seller`   | "Regular Packages"         |
+| **`SEASONAL`**    | Tied strictly to natural seasons, weather changes, or regional climate windows (Spring, Summer, Autumn, Winter).    | _GWE Spring 2026_, _GWE Summer 2026_, _Swiss Winter Alps_                           | `🌸 Spring` / `☀️ Summer` / `❄️ Winter`  | "Spring / Autumn / Winter" |
+| **`THEMED`**      | Centered around cultural festivals, flower blooms, sports events, or special attractions.                           | _GWE Tulip Keukenhof_, _Swiss Glacier Wonderland_, _Christmas Market Tour_          | `🌷 Tulip Edition` / `🎌 Festival`      | "Themed & Events"          |
 | **`PROMOTIONAL`** | Limited-seat commercial releases, early bird launches, or flash sale campaigns with special pricing.                | _Early Bird Europe 2026_, _Flash Sale GWE IDR 24.9M_, _Travel Fair Special_         | `🔥 Flash Sale` / `⚡ Early Bird`       | "Promotions & Deals"       |
 
 #### F. Product Types (`product_type`) — `products`
@@ -691,10 +691,11 @@ erDiagram
 
 | id | dimension_id | parent_id | name | slug |
 | :--- | :--- | :--- | :--- | :--- |
-| `cat_open_group` | `dim_travel_style` | NULL | Paket Tour / Open Trip | open-group-tour |
-| `cat_private_trip` | `dim_travel_style` | NULL | Private Trip | private-trip |
-| `cat_corporate_mice` | `dim_travel_style` | NULL | Corporate & MICE | corporate-mice |
-| `cat_signature_premium` | `dim_travel_style` | NULL | Signature 5-Star Tour | signature-5star-tour |
+| `cat_travel_style` | `dim_travel_style` | NULL | Travel Style | travel-style |
+| `cat_pop_group_tours` | `dim_travel_style` | `cat_travel_style` | Popular Group Tours | popular-group-tours |
+| `cat_private_trip` | `dim_travel_style` | `cat_travel_style` | Private Trip | private-trip |
+| `cat_corporate_mice` | `dim_travel_style` | `cat_travel_style` | Corporate & MICE | corporate-mice |
+| `cat_signature_premium` | `dim_travel_style` | `cat_travel_style` | Signature 5-Star Tour | signature-5star-tour |
 | `cat_cultural_wonders` | `dim_theme` | NULL | Cultural & Wonders | cultural-wonders |
 | `cat_nature_scenic` | `dim_theme` | NULL | Nature & Alpine Scenery | nature-alpine-scenery |
 | `cat_flower_bloom` | `dim_theme` | NULL | Sakura & Flower Blooms | sakura-flower-blooms |
@@ -726,7 +727,7 @@ erDiagram
 
 | Table | product_id | duration_days | duration_nights |
 | :--- | :--- | :--- | :--- |
-| `product_journeys` | `prod_gwe_01` | 11 | 9 |
+| `product_journeys` | `prod_gwe_01` | 7 | 6 |
 | `product_journeys` | `prod_jpn_01` | 7 | 5 |
 | `product_journeys` | `prod_kor_01` | 6 | 4 |
 | `product_journeys` | `prod_tur_01` | 9 | 7 |
@@ -739,25 +740,28 @@ erDiagram
 
 | id | product_id | variant_id | category_id | Category Name | Dimension | is_primary | Assignment Scope |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `pca_01` | `prod_gwe_01` | **NULL** | `cat_open_group` | Paket Tour / Open Trip | `TRAVEL_STYLE` | **TRUE** | **L1: Product (Grand West Europe)** |
+| `pca_01` | `prod_gwe_01` | **NULL** | `cat_pop_group_tours` | Popular Group Tours | `TRAVEL_STYLE` | **TRUE** | **L1: Product (Grand West Europe)** |
 | `pca_02` | `prod_gwe_01` | **NULL** | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L1: Product (Grand West Europe)** |
 | `pca_03` | `prod_gwe_01` | **NULL** | `cat_halal_friendly` | Halal / Muslim Friendly | `SPECIAL_EXPERIENCE` | **TRUE** | **L1: Product (Grand West Europe)** |
-| `pca_04` | `prod_gwe_01` | `var_gwe_std` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_std` Classic 11D)** |
-| `pca_05` | `prod_gwe_01` | `var_gwe_fls` | `cat_autumn_foliage` | Autumn Leaves & Foliage | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_fls` Autumn Flash Sale)** |
-| `pca_06` | `prod_gwe_01` | `var_gwe_ntr` | `cat_nataru` | Natal & Tahun Baru (NATARU) | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_ntr` Nataru Edition)** |
-| `pca_07` | `prod_jpn_01` | `var_jpn_sakura` | `cat_flower_bloom` | Sakura & Flower Blooms | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_jpn_sakura` Japan Sakura 7D)** |
-| `pca_08` | `prod_jpn_01` | `var_jpn_sakura` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_jpn_sakura` Japan Sakura 7D)** |
-| `pca_09` | `prod_kor_01` | `var_kor_autumn` | `cat_autumn_foliage` | Autumn Leaves & Foliage | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_kor_autumn` Korea Autumn 6D)** |
-| `pca_10` | `prod_sws_01` | `var_sws_sig` | `cat_signature_premium`| Signature 5-Star Tour | `TRAVEL_STYLE` | **TRUE** | **L2: Variant (`var_sws_sig` Swiss Alps Signature)** |
-| `pca_11` | `prod_sws_01` | `var_sws_sig` | `cat_nature_scenic` | Nature & Alpine Scenery | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_sws_sig` Swiss Alps Signature)** |
+| `pca_04` | `prod_gwe_01` | `var_gwe_std_26` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_std_26` Classic All-Year)** |
+| `pca_05` | `prod_gwe_01` | `var_gwe_spr_26` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_spr_26` Spring 2026)** |
+| `pca_06` | `prod_gwe_01` | `var_gwe_sum_26` | `cat_summer_holiday` | Summer Holiday | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_sum_26` Summer 2026)** |
+| `pca_07` | `prod_gwe_01` | `var_gwe_tlp_26` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | FALSE | **L2: Variant (`var_gwe_tlp_26` Tulip Keukenhof)** |
+| `pca_08` | `prod_gwe_01` | `var_gwe_tlp_26` | `cat_flower_bloom` | Sakura & Flower Blooms | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_tlp_26` Tulip Keukenhof)** |
+| `pca_09` | `prod_gwe_01` | `var_gwe_eb_26` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_eb_26` Early Bird Europe)** |
+| `pca_10` | `prod_jpn_01` | `var_jpn_sakura` | `cat_flower_bloom` | Sakura & Flower Blooms | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_jpn_sakura` Japan Sakura 7D)** |
+| `pca_11` | `prod_sws_01` | `var_sws_sig` | `cat_signature_premium`| Signature 5-Star Tour | `TRAVEL_STYLE` | **TRUE** | **L2: Variant (`var_sws_sig` Swiss Alps Signature)** |
 
 #### Sample `product_badges` (Marketing Visual Card Ribbons)
 
 | id | code | label | background_color | text_color | icon_url | is_active |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `badge_best_seller` | `BEST_SELLER` | 🔥 Best Seller | `#004FC0` | `#FFFFFF` | NULL | TRUE |
-| `badge_flash_sale` | `FLASH_SALE` | ⚡ Flash Sale | `#E8352A` | `#FFFFFF` | NULL | TRUE |
+| `badge_spring` | `SPRING_EDITION` | 🌸 Spring Edition | `#FDF2F8` | `#9D174D` | NULL | TRUE |
+| `badge_summer` | `SUMMER_HOLIDAY` | ☀️ Summer Holiday | `#FEF3C7` | `#92400E` | NULL | TRUE |
+| `badge_tulip` | `TULIP_SPECIAL` | 🌷 Tulip Edition | `#F0FDF4` | `#166534` | NULL | TRUE |
 | `badge_early_bird` | `EARLY_BIRD` | ⚡ Early Bird | `#FFA80F` | `#0A1426` | NULL | TRUE |
+| `badge_flash_sale` | `FLASH_SALE` | ⚡ Flash Sale | `#E8352A` | `#FFFFFF` | NULL | TRUE |
 | `badge_populer` | `POPULER` | ✨ Populer | `#FFA80F` | `#0A1426` | NULL | TRUE |
 | `badge_premium` | `PREMIUM` | ⭐ Premium | `#0A1426` | `#FFA80F` | NULL | TRUE |
 | `badge_baru` | `BARU` | 🆕 Baru | `#188a42` | `#FFFFFF` | NULL | TRUE |
@@ -766,9 +770,11 @@ erDiagram
 
 | variant_id | badge_id | Applied Variant Card | Visual Rendering on Storefront |
 | :--- | :--- | :--- | :--- |
-| `var_gwe_std` | `badge_best_seller` | Grand Europe Tour 11 Hari | Blue pill `🔥 Best Seller` on top-left card thumbnail & PDP header |
-| `var_gwe_fls` | `badge_flash_sale` | Autumn di Switzerland Flash Sale | Red pill `⚡ Flash Sale` with countdown banner |
-| `var_gwe_eb` | `badge_early_bird` | Early Bird Europe 2026 | Orange pill `⚡ Early Bird` |
+| `var_gwe_std_26` | `badge_best_seller` | GWE Classic All-Year | Blue pill `🔥 Best Seller` on top-left card thumbnail & PDP header |
+| `var_gwe_spr_26` | `badge_spring` | GWE Spring 2026 | Pink pill `🌸 Spring Edition` |
+| `var_gwe_sum_26` | `badge_summer` | GWE Summer 2026 | Yellow pill `☀️ Summer Holiday` |
+| `var_gwe_tlp_26` | `badge_tulip` | GWE Tulip Keukenhof | Green pill `🌷 Tulip Edition` |
+| `var_gwe_eb_26` | `badge_early_bird` | Early Bird Europe | Orange pill `⚡ Early Bird` |
 | `var_jpn_sakura` | `badge_populer` | Japan Sakura Golden Route | Orange pill `✨ Populer` |
 | `var_sws_sig` | `badge_premium` | Swiss Alps Signature 8D | Dark navy pill with gold text `⭐ Premium` |
 | `var_afr_egy_mor` | `badge_baru` | Egypt & Morocco 12D | Green pill `🆕 Baru` |
@@ -835,38 +841,53 @@ erDiagram
         uuid       trip_id             FK
         varchar    code                "ADDON-SINGLE-SUPP"
         varchar    name                "Single Supplement"
+        varchar    addon_type          "SINGLE_ROOM | BAGGAGE | FLIGHT_UPGRADE | EXPERIENTIAL_TOUR | INSURANCE | VISA_EXPRESS | SPECIAL_MEAL"
         varchar    charge_type         "PER_PAX | PER_ROOM | PER_BOOKING"
         varchar    applicable_age_band "ALL | ADULT | INFANT"
         decimal    price
+        boolean    is_mandatory        "false | true"
+        int        max_quantity        "1"
+        boolean    is_active           "true"
     }
 ```
 
 | Table | id | product_id | variant_type | name | slug | code | duration_days | duration_nights | listing_status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `product_variants` | var_gwe_std | prod_gwe_01 | STANDARD | Grand West Europe Classic 11D | gwe-classic-11d | GWE-STD-2026 | NULL (11) | NULL (10) | ACTIVE |
-| `product_variants` | var_gwe_sum | prod_gwe_01 | SEASONAL | Grand West Europe Summer Keukenhof | gwe-summer-2026 | GWE-SUM-2026 | NULL (11) | NULL (10) | ACTIVE |
-| `product_variants` | var_gwe_wnt | prod_gwe_01 | THEMED | Grand West Europe Winter & Swiss Glacier | gwe-winter-swiss-2026 | GWE-WNT-2026 | 12 (override) | 11 (override) | ACTIVE |
-| `product_variants` | var_gwe_fls | prod_gwe_01 | PROMOTIONAL | Grand West Europe Flash Deal IDR 24.9M | gwe-flash-sale-2026 | GWE-FLS-2026 | NULL (11) | NULL (10) | ACTIVE |
+| `product_variants` | var_gwe_std_26 | prod_gwe_01 | STANDARD | GWE Classic All-Year | gwe-classic-all-year | GWE-STD-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `product_variants` | var_gwe_spr_26 | prod_gwe_01 | SEASONAL | GWE Spring 2026 | gwe-spring-2026 | GWE-SPR-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `product_variants` | var_gwe_sum_26 | prod_gwe_01 | SEASONAL | GWE Summer 2026 | gwe-summer-2026 | GWE-SUM-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `product_variants` | var_gwe_tlp_26 | prod_gwe_01 | THEMED | GWE Tulip Keukenhof | gwe-tulip-keukenhof | GWE-TLP-2026 | NULL (7) | NULL (6) | ACTIVE |
+| `product_variants` | var_gwe_eb_26 | prod_gwe_01 | PROMOTIONAL | Early Bird Europe | early-bird-europe-2026 | GWE-EB-2026 | NULL (7) | NULL (6) | ACTIVE |
 
 | Table | id | variant_id | start_date | end_date | min_quota | max_quota | status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `product_trips` | trip_gwe_std01 | var_gwe_std | 2026-08-10 | 2026-08-20 | 15 | 30 | ACTIVE |
-| `product_trips` | trip_gwe_sum01 | var_gwe_sum | 2026-07-10 | 2026-07-20 | 20 | 35 | ACTIVE |
-| `product_trips` | trip_gwe_wnt01 | var_gwe_wnt | 2026-12-15 | 2026-12-26 | 15 | 25 | ACTIVE |
+| `product_trips` | trip_gwe_std_01 | var_gwe_std_26 | 2026-08-05 | 2026-08-11 | 15 | 30 | ACTIVE |
+| `product_trips` | trip_gwe_spr_01 | var_gwe_spr_26 | 2026-09-10 | 2026-09-16 | 15 | 30 | ACTIVE |
+| `product_trips` | trip_gwe_sum_01 | var_gwe_sum_26 | 2026-07-10 | 2026-07-16 | 20 | 35 | ACTIVE |
+| `product_trips` | trip_gwe_tlp_01 | var_gwe_tlp_26 | 2026-04-15 | 2026-04-21 | 15 | 25 | ACTIVE |
+| `product_trips` | trip_gwe_eb_01 | var_gwe_eb_26 | 2026-11-01 | 2026-11-07 | 10 | 20 | ACTIVE |
 
 | Table | id | trip_id | age_band | consumes_quota | base_price | selling_price |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `product_trip_pricings` | pricing_std_adult | trip_gwe_std01 | ADULT | TRUE | 32000000.00 | 28500000.00 |
-| `product_trip_pricings` | pricing_std_infant | trip_gwe_std01 | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
+| `product_trip_pricings` | pricing_std_ad | trip_gwe_std_01 | ADULT | TRUE | 32000000.00 | 28500000.00 |
+| `product_trip_pricings` | pricing_std_inf | trip_gwe_std_01 | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
+| `product_trip_pricings` | pricing_spr_ad | trip_gwe_spr_01 | ADULT | TRUE | 31500000.00 | 28000000.00 |
+| `product_trip_pricings` | pricing_spr_inf | trip_gwe_spr_01 | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
+| `product_trip_pricings` | pricing_sum_ad | trip_gwe_sum_01 | ADULT | TRUE | 33500000.00 | 29500000.00 |
+| `product_trip_pricings` | pricing_sum_inf | trip_gwe_sum_01 | INFANT | FALSE | 8000000.00 | 6500000.00 |
+| `product_trip_pricings` | pricing_tlp_ad | trip_gwe_tlp_01 | ADULT | TRUE | 35000000.00 | 31000000.00 |
+| `product_trip_pricings` | pricing_tlp_inf | trip_gwe_tlp_01 | INFANT | FALSE (or TRUE if seat allocated) | 8500000.00 | 7000000.00 |
+| `product_trip_pricings` | pricing_eb_ad | trip_gwe_eb_01 | ADULT | TRUE | 30000000.00 | 24900000.00 |
+| `product_trip_pricings` | pricing_eb_inf | trip_gwe_eb_01 | INFANT | FALSE | 7500000.00 | 6000000.00 |
 
-**Sample Add-ons (`product_addons`) under Variant `var_gwe_std`:**
+**Sample Add-ons (`product_addons`) under Variant `var_gwe_std_26`:**
 
-| id | variant_id | trip_id | code | name | charge_type | price | applicable_age_band | is_mandatory |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| addon_01 | var_gwe_std | NULL | ADDON-SINGLE-SUPP | Single Supplement (Kamar Sendiri) | PER_ROOM | 8500000.00 | ADULT | FALSE |
-| addon_02 | var_gwe_std | NULL | ADDON-TITLIS-ICEFLYER | Mount Titlis Rotair Cable Car & Ice Flyer Experience | PER_PAX | 2400000.00 | NULL (ALL) | FALSE |
-| addon_03 | var_gwe_std | NULL | ADDON-EIFFEL-SUMMIT | Eiffel Tower Top Summit Elevator Access | PER_PAX | 850000.00 | NULL (ALL) | FALSE |
-| addon_04 | var_gwe_std | NULL | ADDON-SCHENGEN-VIP | Schengen Visa Express Consular Appointment Assistance | PER_PAX | 2500000.00 | NULL (ALL) | FALSE |
+| id | variant_id | trip_id | code | name | addon_type | charge_type | price | applicable_age_band | is_mandatory |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `addon_gwe_01` | `var_gwe_std_26` | NULL | `ADDON-SINGLE-SUPP` | Single Supplement (Kamar Sendiri) | `SINGLE_ROOM` | `PER_ROOM` | 8500000.00 | `ADULT` | `FALSE` |
+| `addon_gwe_02` | `var_gwe_std_26` | NULL | `ADDON-TITLIS-ICEFLYER` | Mount Titlis Rotair Cable Car & Ice Flyer Experience | `EXPERIENTIAL_TOUR` | `PER_PAX` | 2400000.00 | `NULL` (ALL) | `FALSE` |
+| `addon_gwe_03` | `var_gwe_std_26` | NULL | `ADDON-EIFFEL-SUMMIT` | Eiffel Tower Top Summit Elevator Access | `EXPERIENTIAL_TOUR` | `PER_PAX` | 850000.00 | `NULL` (ALL) | `FALSE` |
+| `addon_gwe_04` | `var_gwe_std_26` | NULL | `ADDON-SCHENGEN-VIP` | Schengen Visa Express Consular Appointment Assistance | `VISA_EXPRESS` | `PER_PAX` | 2500000.00 | `NULL` (ALL) | `FALSE` |
 
 ---
 
@@ -904,17 +925,18 @@ erDiagram
 
 | Table | id | variant_id | trip_id | itinerary_type | title |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `product_itineraries` | itin_var_std_01 | var_gwe_std | NULL | STANDARD | Grand West Europe 11D Master Program |
-| `product_itineraries` | itin_trip_override_01 | var_gwe_wnt | trip_gwe_wnt01 | CUSTOM | Grand West Europe 12D Winter Swiss Glacier Special Program |
+| `product_itineraries` | itin_var_std_01 | var_gwe_std_26 | NULL | STANDARD | 7D/6N Western Europe Classic Program (Amsterdam, Paris, Swiss Alps) |
+| `product_itineraries` | itin_trip_tlp_ovr | var_gwe_tlp_26 | trip_gwe_tlp_01 | CUSTOM | 7D/6N Tulip Special Keukenhof Peak Itinerary |
 
 | Table | id | itinerary_id | day_number | sequence_number | item_type | title | poi_area_id |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | `product_itinerary_items` | item_001 | itin_var_std_01 | 1 | 1 | TRANSPORT | Flight Jakarta to Amsterdam Schiphol | NULL |
-| `product_itinerary_items` | item_002 | itin_var_std_01 | 2 | 1 | ACTIVITY | Keukenhof Tulip Gardens & Flower Dome | area_poi_keukenhof |
-| `product_itinerary_items` | item_003 | itin_var_std_01 | 4 | 1 | ACTIVITY | Paris Highlights & Eiffel Tower Observation | area_poi_eiffel |
-| `product_itinerary_items` | item_004 | itin_var_std_01 | 6 | 1 | ACTIVITY | Mount Titlis Rotair Cable Car & Glacier Excursion | area_poi_titlis |
-| `product_itinerary_items` | item_005 | itin_var_std_01 | 7 | 1 | ACTIVITY | Lucerne Chapel Bridge & Zurich Old Town Leisure | area_poi_chapel_bridge |
-| `product_itinerary_items` | item_006 | itin_var_std_01 | 11 | 1 | OTHER | Zurich Airport Check-in & Return Flight to Jakarta | area_poi_zurich |
+| `product_itinerary_items` | item_002 | itin_var_std_01 | 2 | 1 | ACTIVITY | Keukenhof Tulip Gardens & Zaanse Schans | area_poi_keukenhof |
+| `product_itinerary_items` | item_003 | itin_var_std_01 | 3 | 1 | ACTIVITY | Brussels Grand Place & Atomium Photo Stop | area_poi_atomium |
+| `product_itinerary_items` | item_004 | itin_var_std_01 | 4 | 1 | ACTIVITY | Paris Highlights & Eiffel Tower Observation | area_poi_eiffel |
+| `product_itinerary_items` | item_005 | itin_var_std_01 | 5 | 1 | ACTIVITY | Mount Titlis Rotair Cable Car & Glacier Excursion | area_poi_titlis |
+| `product_itinerary_items` | item_006 | itin_var_std_01 | 6 | 1 | ACTIVITY | Lucerne Chapel Bridge & Zurich Old Town Leisure | area_poi_chapel_bridge |
+| `product_itinerary_items` | item_007 | itin_var_std_01 | 7 | 1 | OTHER | Zurich Airport Check-in & Return Flight to Jakarta | area_poi_zurich |
 
 ---
 

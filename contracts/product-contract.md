@@ -604,8 +604,8 @@ Returns the default master day-by-day itinerary defined for this variant.
     "itineraryId": "550e8400-e29b-41d4-a716-446655440070",
     "variantSlug": "gwe-spring-2026",
     "tripId": null,
-    "title": "GWE Spring Master Itinerary 11D",
-    "daysCount": 11,
+    "title": "7D/6N Spring Blossom Western Europe",
+    "daysCount": 7,
     "items": [
       {
         "itemId": "550e8400-e29b-41d4-a716-446655440071",
@@ -888,8 +888,8 @@ Resolves itinerary following the priority rule: returns **Trip-specific override
     "tripId": "550e8400-e29b-41d4-a716-446655440031",
     "variantSlug": "gwe-spring-2026",
     "isOverride": false,
-    "title": "GWE Spring Master Itinerary 11D",
-    "daysCount": 11,
+    "title": "7D/6N Spring Blossom Western Europe",
+    "daysCount": 7,
     "items": [
       {
         "dayNumber": 1,
@@ -913,8 +913,8 @@ Resolves itinerary following the priority rule: returns **Trip-specific override
     "tripId": "550e8400-e29b-41d4-a716-446655440031",
     "variantSlug": "gwe-spring-2026",
     "isOverride": true,
-    "title": "GWE Spring 11D - Keukenhof Peak Special (Trip Override)",
-    "daysCount": 11,
+    "title": "7D/6N Tulip Special Keukenhof Peak Itinerary",
+    "daysCount": 7,
     "items": [
       {
         "dayNumber": 1,

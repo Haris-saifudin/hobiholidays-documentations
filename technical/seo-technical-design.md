@@ -120,7 +120,7 @@ Structured data is directly injected into the HTML as `<script type="application
       "@type": "TouristTrip",
       "@id": "https://www.hobiholidays.com/tours/grand-west-europe/gwe-spring-2026#trip",
       "name": "GWE Spring 2026",
-      "description": "Paket tour 11 hari 9 malam menjelajahi keindahan Eropa Barat di musim semi.",
+      "description": "Paket tour 7 hari 6 malam menjelajahi keindahan Eropa Barat di musim semi.",
       "touristType": "Leisure travelers",
       "offers": {
         "@type": "Offer",

@@ -618,15 +618,15 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "durationDays": 11,
-      "durationNights": 9,
+      "durationDays": 7,
+      "durationNights": 6,
       "badges": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440090",
-          "code": "BEST_SELLER",
-          "label": "🔥 Best Seller",
-          "backgroundColor": "#EF4444",
-          "textColor": "#FFFFFF",
+          "code": "SPRING_EDITION",
+          "label": "🌸 Spring Edition",
+          "backgroundColor": "#FDF2F8",
+          "textColor": "#9D174D",
           "iconUrl": null,
           "sortOrder": 10
         }
@@ -634,8 +634,8 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
       "categories": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440080",
-          "name": "Paket Tour / Open Trip",
-          "slug": "paket-tour-open-trip",
+          "name": "Popular Group Tours",
+          "slug": "popular-group-tours",
           "dimensionCode": "TRAVEL_STYLE",
           "dimensionName": "Travel Style",
           "isPrimary": true
@@ -664,29 +664,28 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
         }
       ],
       "availableDates": [
-        "2026-04-10",
-        "2026-04-24"
+        "2026-09-10"
       ],
       "startingPrice": 28000000.00,
       "currency": "IDR"
     },
     {
       "variantId": "550e8400-e29b-41d4-a716-446655440021",
-      "variantName": "Tulip Keukenhof Special",
-      "variantSlug": "tulip-keukenhof-special",
+      "variantName": "GWE Tulip Keukenhof",
+      "variantSlug": "gwe-tulip-keukenhof",
       "variantType": "THEMED",
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "durationDays": 9,
-      "durationNights": 7,
+      "durationDays": 7,
+      "durationNights": 6,
       "badges": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440091",
-          "code": "FLASH_SALE",
-          "label": "⚡ Flash Sale",
-          "backgroundColor": "#F59E0B",
-          "textColor": "#000000",
+          "code": "TULIP_SPECIAL",
+          "label": "🌷 Tulip Edition",
+          "backgroundColor": "#F0FDF4",
+          "textColor": "#166534",
           "iconUrl": null,
           "sortOrder": 20
         }
@@ -694,8 +693,8 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
       "categories": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440080",
-          "name": "Paket Tour / Open Trip",
-          "slug": "paket-tour-open-trip",
+          "name": "Popular Group Tours",
+          "slug": "popular-group-tours",
           "dimensionCode": "TRAVEL_STYLE",
           "dimensionName": "Travel Style",
           "isPrimary": true
@@ -724,7 +723,7 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
         }
       ],
       "availableDates": [
-        "2026-05-02"
+        "2026-04-15"
       ],
       "startingPrice": 31000000.00,
       "currency": "IDR"
@@ -864,21 +863,21 @@ WHERE
   "data": [
     {
       "variantId": "550e8400-e29b-41d4-a716-446655440021",
-      "variantName": "Tulip Keukenhof Special",
-      "variantSlug": "tulip-keukenhof-special",
+      "variantName": "GWE Tulip Keukenhof",
+      "variantSlug": "gwe-tulip-keukenhof",
       "variantType": "THEMED",
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "durationDays": 9,
-      "durationNights": 7,
+      "durationDays": 7,
+      "durationNights": 6,
       "badges": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440091",
-          "code": "FLASH_SALE",
-          "label": "⚡ Flash Sale",
-          "backgroundColor": "#F59E0B",
-          "textColor": "#000000",
+          "code": "TULIP_SPECIAL",
+          "label": "🌷 Tulip Edition",
+          "backgroundColor": "#F0FDF4",
+          "textColor": "#166534",
           "iconUrl": null,
           "sortOrder": 20
         }
@@ -886,8 +885,8 @@ WHERE
       "categories": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440080",
-          "name": "Paket Tour / Open Trip",
-          "slug": "paket-tour-open-trip",
+          "name": "Popular Group Tours",
+          "slug": "popular-group-tours",
           "dimensionCode": "TRAVEL_STYLE",
           "dimensionName": "Travel Style",
           "isPrimary": true
@@ -910,7 +909,7 @@ WHERE
         }
       ],
       "availableDates": [
-        "2026-05-02"
+        "2026-04-15"
       ],
       "startingPrice": 31000000.00,
       "currency": "IDR"
@@ -1109,7 +1108,7 @@ sequenceDiagram
     participant DB as PostgreSQL
 
     User->>WebUI: Enters "Europe", IDR 25M-35M, "2 Pack", Month: "Oct 2026", Theme: "Cultural"
-    WebUI->>API: GET /api/v1/variants/search?continentSlug=europe&minPrice=25000000&maxPrice=35000000&totalPack=2&departureMonth=2026-10&categorySlugs[]=cultural-heritage
+    WebUI->>API: GET /api/v1/variants/search?continentSlug=europe&minPrice=25000000&maxPrice=35000000&totalPack=2&departureMonth=2026-10&categorySlugs[]=cultural-wonders
 
     activate API
     API->>API: Validate Query via SearchTripDto (class-validator)
