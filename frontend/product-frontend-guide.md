@@ -19,9 +19,9 @@ The Variant Detail Page (PDP) presents the master brand narrative alongside vari
 ├─────────────────────────────────────────────────────────────────────────┤
 │ [Hero Image & Gallery Carousel]             │ [Sticky Booking Card]     │
 │ Title: Grand West Europe Spring 2026        │ Price: IDR 28.000.000     │
-│ Category: Classic Series (Tour Series)      │ [Age Band: Adult / Infant] │
-│ Duration: 11 Days / 9 Nights                │ [Rincian Komponen Biaya ↗]│
-│ Code: GWE-SPR-2026   [🌸 Spring Edition]    │ Departure Date Selector   │
+│ Categories: Classic Series • Spring Blossom │ [Age Band: Adult / Infant] │
+│ Duration: 7 Hari / 6 Malam (7D/6N)          │ [Rincian Komponen Biaya ↗]│
+│ Badges: [⚡ Pasti Berangkat] [🔥 Hot Deal]   │ Departure Date Selector   │
 │                                             │ Quota: 8 Seats Remaining  │
 │                                             │ [Add-on Extras Selector]  │
 │                                             │ [Book This Tour Button]   │
@@ -92,14 +92,14 @@ export default async function VariantDetailPage({ params }: Props) {
               <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
                 {variant.variantType}
               </span>
-              {variant.product.category && (
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-                  {variant.product.category.name}
+              {variant.product.categories?.map((cat: any) => (
+                <span key={cat.id} className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                  {cat.name}
                 </span>
-              )}
+              ))}
             </div>
             <p className="text-gray-600 mt-2 text-lg">
-              {variant.durationDays} Hari / {variant.durationNights} Malam
+              {variant.durationDays} Hari / {variant.durationNights} Malam (7D/6N)
             </p>
           </div>
 

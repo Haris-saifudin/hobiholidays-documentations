@@ -25,7 +25,7 @@ Drives the main tour package grid on the `/tours` page. Returns one listing card
 ### 1.1 Query Parameters (`ListVariantsDto`)
 
 ```typescript
-import { IsOptional, IsString, IsInt, Min, IsIn } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsIn, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListVariantsDto {
@@ -35,12 +35,43 @@ export class ListVariantsDto {
   variantType?: 'STANDARD' | 'SEASONAL' | 'THEMED' | 'PROMOTIONAL';
 
   @IsOptional()
-  @IsString()
-  parentCategorySlug?: string; // e.g. "tour-series"
+  @IsArray()
+  @IsString({ each: true })
+  categorySlugs?: string[];
 
   @IsOptional()
   @IsString()
-  categorySlug?: string; // e.g. "classic-series"
+  categorySlug?: string;
+
+  @IsOptional()
+  @IsString()
+  travelStyleSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  themeSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  seasonSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  specialSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  badgeCode?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  badgeCodes?: string[];
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['SHORT', 'MEDIUM', 'LONG'])
+  durationBracket?: 'SHORT' | 'MEDIUM' | 'LONG';
 
   @IsOptional()
   @IsString()
@@ -93,31 +124,47 @@ export class ListVariantsDto {
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440081",
-        "name": "Classic Series",
-        "slug": "classic-series"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
-      "durationDays": 11,
-      "durationNights": 9,
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440081",
+          "name": "Popular Group Tours",
+          "slug": "popular-group-tours",
+          "dimensionCode": "TRAVEL_STYLE",
+          "isPrimary": true
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440085",
+          "name": "Spring & Sakura Season",
+          "slug": "spring-sakura-season",
+          "dimensionCode": "SEASON_MOMENT",
+          "isPrimary": true
+        }
+      ],
+      "durationDays": 7,
+      "durationNights": 6,
       "coverUrl": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",
       "destinations": [
         {
           "poi": "Keukenhof",
           "country": "Netherlands",
+          "countryCode": "NL",
           "subContinent": "Western Europe",
-          "continent": "Europe"
+          "continent": "Europe",
+          "poiSlug": "keukenhof",
+          "countrySlug": "netherlands",
+          "subContinentSlug": "western-europe",
+          "continentSlug": "europe"
         },
         {
           "poi": "Eiffel Tower",
           "country": "France",
+          "countryCode": "FR",
           "subContinent": "Western Europe",
-          "continent": "Europe"
+          "continent": "Europe",
+          "poiSlug": "eiffel-tower",
+          "countrySlug": "france",
+          "subContinentSlug": "western-europe",
+          "continentSlug": "europe"
         }
       ],
       "startingPrice": 28000000.00,
@@ -143,61 +190,37 @@ export class ListVariantsDto {
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440082",
-        "name": "Flower Season",
-        "slug": "flower-season"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
-      "durationDays": 9,
-      "durationNights": 7,
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440084",
+          "name": "Sakura & Flower Blooms",
+          "slug": "sakura-flower-blooms",
+          "dimensionCode": "THEME_INTEREST",
+          "isPrimary": true
+        }
+      ],
+      "durationDays": 7,
+      "durationNights": 6,
       "coverUrl": "https://cdn.hobiholidays.com/products/gwe/keukenhof-tulips.jpg",
       "destinations": [
         {
           "poi": "Keukenhof",
           "country": "Netherlands",
           "subContinent": "Western Europe",
-          "continent": "Europe"
-        },
-        {
-          "poi": "Grand Place",
-          "country": "Belgium",
-          "subContinent": "Western Europe",
-          "continent": "Europe"
+          "continent": "Europe",
+          "poiSlug": "keukenhof",
+          "countrySlug": "netherlands",
+          "subContinentSlug": "western-europe",
+          "continentSlug": "europe"
         }
       ],
       "startingPrice": 31000000.00,
       "currency": "IDR",
       "nextDepartureDate": "2026-05-02",
       "totalActiveDepartures": 2
-    },
-    {
-      "variantId": "550e8400-e29b-41d4-a716-446655440022",
-      "code": "JP-AUT-2026",
-      "name": "Japan Autumn Discovery",
-      "slug": "japan-autumn-discovery",
-      "variantType": "SEASONAL",
-      "badges": [],
-      "productId": "550e8400-e29b-41d4-a716-446655440015",
-      "productName": "Japan Highlights Tour",
-      "productSlug": "japan-highlights",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440081",
-        "name": "Classic Series",
-        "slug": "classic-series"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
-      "durationDays": 7,
-      "durationNights": 6,
-      "coverUrl": "https://cdn.hobiholidays.com/products/japan/tokyo-fuji.jpg",
+    }
+  ]
+}
       "destinations": [
         {
           "continent": "Asia",
@@ -235,8 +258,8 @@ Returns the aggregated payload required to render the full tour detail page (`/t
       "slug": "gwe-spring-2026",
       "variantType": "SEASONAL",
       "listingStatus": "ACTIVE",
-      "durationDays": 11,
-      "durationNights": 9,
+      "durationDays": 7,
+      "durationNights": 6,
       "startingPrice": 28000000.00,
       "currency": "IDR",
       "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-spring-2026-brochure.pdf",
@@ -255,16 +278,36 @@ Returns the aggregated payload required to render the full tour detail page (`/t
       "name": "Grand West Europe",
       "slug": "grand-west-europe",
       "productType": "JOURNEY",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440081",
-        "name": "Classic Series",
-        "slug": "classic-series"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
+      "categories": [
+        {
+          "dimension": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "id": "550e8400-e29b-41d4-a716-446655440081",
+          "name": "Classic Series",
+          "slug": "classic-series"
+        },
+        {
+          "dimension": "THEME_INTEREST",
+          "dimensionName": "Theme & Interest",
+          "id": "550e8400-e29b-41d4-a716-446655440082",
+          "name": "Heritage & Culture",
+          "slug": "heritage-culture"
+        },
+        {
+          "dimension": "SEASON_MOMENT",
+          "dimensionName": "Season & Moment",
+          "id": "550e8400-e29b-41d4-a716-446655440083",
+          "name": "Spring Cherry Blossom",
+          "slug": "spring-blossom"
+        },
+        {
+          "dimension": "SPECIAL_EXPERIENCE",
+          "dimensionName": "Special Experience",
+          "id": "550e8400-e29b-41d4-a716-446655440084",
+          "name": "Scenic Train Rides",
+          "slug": "scenic-trains"
+        }
+      ],
       "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf"
     },
     "media": {
@@ -358,7 +401,7 @@ Returns the aggregated payload required to render the full tour detail page (`/t
       {
         "tripId": "550e8400-e29b-41d4-a716-446655440031",
         "startDate": "2026-04-10",
-        "endDate": "2026-04-20",
+        "endDate": "2026-04-16",
         "minQuota": 1,
         "maxQuota": 25,
         "availableSeats": 8,
@@ -368,27 +411,68 @@ Returns the aggregated payload required to render the full tour detail page (`/t
           {
             "id": "550e8400-e29b-41d4-a716-446655440041",
             "ageBand": "ADULT",
-            "ageMin": 12,
-            "ageMax": null,
+            "minAge": 12,
+            "maxAge": null,
             "consumesQuota": true,
             "basePrice": 32000000.00,
-            "sellingPrice": 28000000.00
+            "sellingPrice": 28000000.00,
+            "currency": "IDR",
+            "components": [
+              {
+                "componentType": "BASE_FARE",
+                "name": "Base Departure & Land Tour",
+                "amount": 26000000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              },
+              {
+                "componentType": "VISA",
+                "name": "Schengen Visa Fee",
+                "amount": 1500000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              },
+              {
+                "componentType": "AIRPORT_TAX",
+                "name": "Airport Tax & Fuel Surcharge",
+                "amount": 350000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              },
+              {
+                "componentType": "TIPPING",
+                "name": "Tour Leader & Driver Tipping",
+                "amount": 150000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              }
+            ]
           },
           {
             "id": "550e8400-e29b-41d4-a716-446655440044",
             "ageBand": "INFANT",
-            "ageMin": 0,
-            "ageMax": 2,
+            "minAge": 0,
+            "maxAge": 2,
             "consumesQuota": false,
             "basePrice": 10000000.00,
-            "sellingPrice": 8500000.00
+            "sellingPrice": 8500000.00,
+            "currency": "IDR",
+            "components": [
+              {
+                "componentType": "BASE_FARE",
+                "name": "Base Infant Transport & Handling",
+                "amount": 8500000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              }
+            ]
           }
         ]
       },
       {
         "tripId": "550e8400-e29b-41d4-a716-446655440032",
         "startDate": "2026-04-24",
-        "endDate": "2026-05-04",
+        "endDate": "2026-04-30",
         "minQuota": 1,
         "maxQuota": 25,
         "availableSeats": 14,
@@ -398,11 +482,42 @@ Returns the aggregated payload required to render the full tour detail page (`/t
           {
             "id": "550e8400-e29b-41d4-a716-446655440051",
             "ageBand": "ADULT",
-            "ageMin": 12,
-            "ageMax": null,
+            "minAge": 12,
+            "maxAge": null,
             "consumesQuota": true,
             "basePrice": 32000000.00,
-            "sellingPrice": 28000000.00
+            "sellingPrice": 28000000.00,
+            "currency": "IDR",
+            "components": [
+              {
+                "componentType": "BASE_FARE",
+                "name": "Base Departure & Land Tour",
+                "amount": 26000000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              },
+              {
+                "componentType": "VISA",
+                "name": "Schengen Visa Fee",
+                "amount": 1500000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              },
+              {
+                "componentType": "AIRPORT_TAX",
+                "name": "Airport Tax & Fuel Surcharge",
+                "amount": 350000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              },
+              {
+                "componentType": "TIPPING",
+                "name": "Tour Leader & Driver Tipping",
+                "amount": 150000.00,
+                "currency": "IDR",
+                "isIncluded": true
+              }
+            ]
           }
         ]
       }
@@ -450,13 +565,19 @@ export interface VariantCardCategoryDto {
   id: string;
   name: string;
   slug: string;
+  dimensionCode: 'TRAVEL_STYLE' | 'THEME_INTEREST' | 'SEASON_MOMENT' | 'SPECIAL_EXPERIENCE';
+  dimensionName: string;
 }
 
 export interface DestinationHierarchyDto {
   continent: string;              // Always resolved (Root)
+  continentSlug?: string;
   subContinent?: string | null;   // Null when anchored directly to CONTINENT
+  subContinentSlug?: string | null;
   country?: string | null;        // Null when anchored to CONTINENT or SUB_CONTINENT
+  countrySlug?: string | null;
   poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
+  poiSlug?: string | null;
 }
 
 export type VariantCardDestinationDto = DestinationHierarchyDto;
@@ -471,8 +592,7 @@ export interface VariantCardDto {
   productId: string;
   productName: string;
   productSlug: string;
-  category: VariantCardCategoryDto;
-  parentCategory: VariantCardCategoryDto;
+  categories: VariantCardCategoryDto[];
   durationDays: number;
   durationNights: number;
   coverUrl: string;

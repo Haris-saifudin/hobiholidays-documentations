@@ -18,22 +18,26 @@ src/modules/product/
 ├── product.module.ts
 ├── controllers/
 │   ├── product.controller.ts             # Base product CRUD & split sub-resources
-│   ├── category.controller.ts            # 2-tier Category tree & CRUD
+│   ├── category.controller.ts            # Multi-Dimensional Category Taxonomy tree & CRUD
 │   ├── variant-itinerary.controller.ts   # Variant master itinerary default
 │   ├── trip-itinerary.controller.ts      # Trip itinerary override & resolution
 │   ├── variant-addon.controller.ts       # Variant add-on management
 │   └── trip-pricing.controller.ts        # Age-band pricing & quota
 ├── services/
 │   ├── product.service.ts                # Master product lifecycle & transactions
-│   ├── category.service.ts               # Category hierarchy management
+│   ├── category.service.ts               # Category taxonomy management
 │   ├── itinerary.service.ts              # Variant default & Trip override itineraries
 │   ├── addon.service.ts                  # Optional extra add-ons
 │   ├── pricing.service.ts                # Age bands & all-inclusive pricing
 │   ├── product-location.service.ts       # 4-tier Area destination markers
 │   └── product-supplementary.service.ts  # Inclusions, exclusions, terms
 └── entities/                             # TypeORM schemas
-    ├── product.entity.ts
+    ├── category-dimension.entity.ts
     ├── product-category.entity.ts
+    ├── product-category-assignment.entity.ts
+    ├── product-badge.entity.ts
+    ├── product-variant-badge.entity.ts
+    ├── product.entity.ts
     ├── product-journey.entity.ts
     ├── product-itinerary.entity.ts
     ├── product-addon.entity.ts
@@ -63,7 +67,11 @@ import { ProductLocationService } from './services/product-location.service';
 import { ProductSupplementaryService } from './services/product-supplementary.service';
 
 import { Product } from './entities/product.entity';
+import { CategoryDimension } from './entities/category-dimension.entity';
 import { ProductCategory } from './entities/product-category.entity';
+import { ProductCategoryAssignment } from './entities/product-category-assignment.entity';
+import { ProductBadge } from './entities/product-badge.entity';
+import { ProductVariantBadge } from './entities/product-variant-badge.entity';
 import { ProductJourney } from './entities/product-journey.entity';
 import { ProductTripPricing } from './entities/product-trip-pricing.entity';
 import { ProductPricingComponent } from './entities/product-pricing-component.entity';
@@ -72,7 +80,11 @@ import { ProductPricingComponent } from './entities/product-pricing-component.en
   imports: [
     TypeOrmModule.forFeature([
       Product,
+      CategoryDimension,
       ProductCategory,
+      ProductCategoryAssignment,
+      ProductBadge,
+      ProductVariantBadge,
       ProductJourney,
       ProductTripPricing,
       ProductPricingComponent,
@@ -248,7 +260,7 @@ export class ProductController {
 
 ## ⚙️ Service Implementation & Atomic Transactions
 
-Creating a Product atomically links its child category (trigger resolves parent category) and stores its default journey duration:
+Creating a Product atomically links its multi-dimensional categories (via `product_category_assignments`) and stores its default journey duration:
 
 ```typescript
 // services/product.service.ts
@@ -256,6 +268,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { DataSource, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Product } from '../entities/product.entity';
+import { ProductCategoryAssignment } from '../entities/product-category-assignment.entity';
 import { ProductJourney } from '../entities/product-journey.entity';
 import { CreateProductDto } from '../dto/create-product.dto';
 import { ListProductsDto } from '../dto/list-products.dto';
@@ -270,7 +283,7 @@ export class ProductService {
 
   /**
    * Atomic Product Creation:
-   * Inserts the master product record with category link and its baseline journey duration.
+   * Inserts the master product record, multi-dimensional category assignments, and baseline journey duration.
    */
   async create(dto: CreateProductDto) {
     const queryRunner = this.dataSource.createQueryRunner();
@@ -283,19 +296,31 @@ export class ProductService {
         code: dto.code,
         name: dto.name,
         slug: dto.slug,
-        categoryId: dto.categoryId,
-        productType: dto.productType,
+        productType: dto.productType || 'JOURNEY',
+        masterDurationDays: dto.masterDurationDays,
+        masterDurationNights: dto.masterDurationNights,
         headline: dto.headline,
         description: dto.description,
         listingStatus: dto.listingStatus || 'DRAFT',
       });
       const savedProduct = await queryRunner.manager.save(product);
 
-      // 2. Insert baseline ProductJourney duration
+      // 2. Insert multi-dimensional category assignments
+      if (dto.categoryIds && dto.categoryIds.length > 0) {
+        const assignments = dto.categoryIds.map((catId) =>
+          queryRunner.manager.create(ProductCategoryAssignment, {
+            productId: savedProduct.id,
+            categoryId: catId,
+          }),
+        );
+        await queryRunner.manager.save(assignments);
+      }
+
+      // 3. Insert baseline ProductJourney duration
       const journey = queryRunner.manager.create(ProductJourney, {
         productId: savedProduct.id,
-        durationDays: dto.durationDays,
-        durationNights: dto.durationNights,
+        durationDays: dto.masterDurationDays,
+        durationNights: dto.masterDurationNights,
       });
       await queryRunner.manager.save(journey);
 
@@ -303,8 +328,8 @@ export class ProductService {
 
       return {
         ...savedProduct,
-        durationDays: dto.durationDays,
-        durationNights: dto.durationNights,
+        durationDays: dto.masterDurationDays,
+        durationNights: dto.masterDurationNights,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -324,8 +349,9 @@ export class ProductService {
 
     const qb = this.productRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.journeys', 'j')
-      .leftJoinAndSelect('p.category', 'cat')
-      .leftJoinAndSelect('p.parentCategory', 'pcat')
+      .leftJoinAndSelect('p.categoryAssignments', 'pca')
+      .leftJoinAndSelect('pca.category', 'cat')
+      .leftJoinAndSelect('cat.dimension', 'dim')
       .where('p.deletedAt IS NULL');
 
     if (dto.listingStatus) {
@@ -335,10 +361,13 @@ export class ProductService {
       qb.andWhere('p.productType = :type', { type: dto.productType });
     }
     if (dto.categoryId) {
-      qb.andWhere('p.categoryId = :catId', { catId: dto.categoryId });
+      qb.andWhere('pca.categoryId = :catId', { catId: dto.categoryId });
     }
     if (dto.categorySlug) {
       qb.andWhere('cat.slug = :catSlug', { catSlug: dto.categorySlug });
+    }
+    if (dto.categorySlugs && dto.categorySlugs.length > 0) {
+      qb.andWhere('cat.slug IN (:...categorySlugs)', { categorySlugs: dto.categorySlugs });
     }
     if (dto.search) {
       qb.andWhere('(p.name ILIKE :search OR p.code ILIKE :search)', {
@@ -369,7 +398,12 @@ export class ProductService {
   async findBySlug(slug: string) {
     const product = await this.productRepo.findOne({
       where: { slug, deletedAt: null as any },
-      relations: ['journeys', 'category', 'parentCategory'],
+      relations: [
+        'journeys',
+        'categoryAssignments',
+        'categoryAssignments.category',
+        'categoryAssignments.category.dimension',
+      ],
     });
     if (!product) {
       throw new NotFoundException(`Product with slug '${slug}' not found`);
@@ -380,7 +414,12 @@ export class ProductService {
   async findById(id: string) {
     const product = await this.productRepo.findOne({
       where: { id, deletedAt: null as any },
-      relations: ['journeys', 'category', 'parentCategory'],
+      relations: [
+        'journeys',
+        'categoryAssignments',
+        'categoryAssignments.category',
+        'categoryAssignments.category.dimension',
+      ],
     });
     if (!product) {
       throw new NotFoundException(`Product with ID '${id}' not found`);
@@ -558,11 +597,11 @@ export class ProductTripPricing {
   @Column({ name: 'age_band', length: 30 })
   ageBand: 'ADULT' | 'INFANT';
 
-  @Column({ name: 'age_min', type: 'int', nullable: true })
-  ageMin: number;
+  @Column({ name: 'min_age', type: 'int', nullable: true })
+  minAge: number;
 
-  @Column({ name: 'age_max', type: 'int', nullable: true })
-  ageMax: number;
+  @Column({ name: 'max_age', type: 'int', nullable: true })
+  maxAge: number;
 
   @Column({ name: 'consumes_quota', type: 'boolean', default: true })
   consumesQuota: boolean;
@@ -646,8 +685,8 @@ export interface CreatePricingComponentDto {
 
 export interface UpsertTripPricingDto {
   ageBand: 'ADULT' | 'INFANT';
-  ageMin?: number;
-  ageMax?: number;
+  minAge?: number;
+  maxAge?: number;
   consumesQuota?: boolean;
   basePrice: number;
   sellingPrice: number;
@@ -687,8 +726,8 @@ export class PricingService {
         pricing = pricingRepo.create({
           tripId,
           ageBand: dto.ageBand,
-          ageMin: dto.ageMin,
-          ageMax: dto.ageMax,
+          minAge: dto.minAge,
+          maxAge: dto.maxAge,
           consumesQuota: dto.consumesQuota ?? (dto.ageBand === 'ADULT'),
           basePrice: dto.basePrice,
           sellingPrice: dto.sellingPrice,
@@ -697,8 +736,8 @@ export class PricingService {
       } else {
         pricing.basePrice = dto.basePrice;
         pricing.sellingPrice = dto.sellingPrice;
-        if (dto.ageMin !== undefined) pricing.ageMin = dto.ageMin;
-        if (dto.ageMax !== undefined) pricing.ageMax = dto.ageMax;
+        if (dto.minAge !== undefined) pricing.minAge = dto.minAge;
+        if (dto.maxAge !== undefined) pricing.maxAge = dto.maxAge;
         if (dto.consumesQuota !== undefined) pricing.consumesQuota = dto.consumesQuota;
         if (dto.currency) pricing.currency = dto.currency;
       }
@@ -729,5 +768,265 @@ export class PricingService {
       });
     });
   }
+}
+```
+
+---
+
+## 6. Core Domain Entities
+
+Complete TypeORM entity definitions reflecting the multi-dimensional taxonomy, promotional badges, and duration inheritance:
+
+### 6.1 Base Product Entity (`Product`)
+
+```typescript
+// entities/product.entity.ts
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { ProductCategoryAssignment } from './product-category-assignment.entity';
+
+@Entity('products')
+export class Product {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 255 })
+  name: string;
+
+  @Column({ length: 280, unique: true })
+  slug: string;
+
+  @Column({ name: 'product_type', length: 30, default: 'JOURNEY' })
+  productType: 'JOURNEY' | 'DAY_TOUR' | 'ACTIVITY';
+
+  @Column({ name: 'master_duration_days', type: 'int' })
+  masterDurationDays: number;
+
+  @Column({ name: 'master_duration_nights', type: 'int' })
+  masterDurationNights: number;
+
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive: boolean;
+
+  @Column({ name: 'itinerary_pdf_url', length: 500, nullable: true })
+  itineraryPdfUrl: string;
+
+  @OneToMany(() => ProductCategoryAssignment, (pca) => pca.product)
+  categoryAssignments: ProductCategoryAssignment[];
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+### 6.2 Category Taxonomy Entities (`CategoryDimension`, `ProductCategory`, `ProductCategoryAssignment`)
+
+```typescript
+// entities/category-dimension.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { ProductCategory } from './product-category.entity';
+
+@Entity('category_dimensions')
+export class CategoryDimension {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 50, unique: true })
+  code: 'TRAVEL_STYLE' | 'THEME_INTEREST' | 'SEASON_MOMENT' | 'SPECIAL_EXPERIENCE';
+
+  @Column({ length: 100 })
+  name: string;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @Column({ name: 'is_required', type: 'boolean', default: false })
+  isRequired: boolean;
+
+  @Column({ name: 'sort_order', type: 'int', default: 0 })
+  sortOrder: number;
+
+  @OneToMany(() => ProductCategory, (cat) => cat.dimension)
+  categories: ProductCategory[];
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+```typescript
+// entities/product-category.entity.ts
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { CategoryDimension } from './category-dimension.entity';
+import { ProductCategoryAssignment } from './product-category-assignment.entity';
+
+@Entity('product_categories')
+export class ProductCategory {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'dimension_id', type: 'uuid' })
+  dimensionId: string;
+
+  @ManyToOne(() => CategoryDimension, (d) => d.categories)
+  @JoinColumn({ name: 'dimension_id' })
+  dimension: CategoryDimension;
+
+  @Column({ name: 'parent_id', type: 'uuid', nullable: true })
+  parentId: string;
+
+  @ManyToOne(() => ProductCategory, (c) => c.children, { nullable: true })
+  @JoinColumn({ name: 'parent_id' })
+  parent: ProductCategory;
+
+  @OneToMany(() => ProductCategory, (c) => c.parent)
+  children: ProductCategory[];
+
+  @Column({ length: 100 })
+  name: string;
+
+  @Column({ length: 120, unique: true })
+  slug: string;
+
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive: boolean;
+
+  @Column({ name: 'sort_order', type: 'int', default: 0 })
+  sortOrder: number;
+
+  @OneToMany(() => ProductCategoryAssignment, (pca) => pca.category)
+  productAssignments: ProductCategoryAssignment[];
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+```typescript
+// entities/product-category-assignment.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { Product } from './product.entity';
+import { ProductCategory } from './product-category.entity';
+
+@Entity('product_category_assignments')
+export class ProductCategoryAssignment {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column('uuid', { name: 'product_id' })
+  productId: string;
+
+  @Column('uuid', { name: 'variant_id', nullable: true })
+  variantId?: string | null;
+
+  @Column('uuid', { name: 'category_id' })
+  categoryId: string;
+
+  @Column({ name: 'is_primary', type: 'boolean', default: false })
+  isPrimary: boolean;
+
+  @ManyToOne(() => Product, (p) => p.categoryAssignments, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'product_id' })
+  product: Product;
+
+  @ManyToOne(() => ProductCategory, (c) => c.productAssignments, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'category_id' })
+  category: ProductCategory;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+}
+```
+
+### 6.3 Promotional Badges Entities (`ProductBadge`, `ProductVariantBadge`)
+
+```typescript
+// entities/product-badge.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { ProductVariantBadge } from './product-variant-badge.entity';
+
+@Entity('product_badges')
+export class ProductBadge {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ length: 50, unique: true })
+  code: string;
+
+  @Column({ length: 100 })
+  label: string;
+
+  @Column({ name: 'background_color', length: 30, default: '#FFFFFF' })
+  backgroundColor: string;
+
+  @Column({ name: 'text_color', length: 30, default: '#000000' })
+  textColor: string;
+
+  @Column({ name: 'icon_url', length: 500, nullable: true })
+  iconUrl: string;
+
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive: boolean;
+
+  @Column({ name: 'sort_order', type: 'int', default: 0 })
+  sortOrder: number;
+
+  @OneToMany(() => ProductVariantBadge, (pvb) => pvb.badge)
+  variantAssignments: ProductVariantBadge[];
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+```typescript
+// entities/product-variant-badge.entity.ts
+import { Entity, PrimaryColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { ProductBadge } from './product-badge.entity';
+
+@Entity('product_variant_badges')
+export class ProductVariantBadge {
+  @PrimaryColumn({ name: 'variant_id', type: 'uuid' })
+  variantId: string;
+
+  @PrimaryColumn({ name: 'badge_id', type: 'uuid' })
+  badgeId: string;
+
+  @ManyToOne(() => ProductBadge, (b) => b.variantAssignments, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'badge_id' })
+  badge: ProductBadge;
+
+  @Column({ name: 'sort_order', type: 'int', default: 0 })
+  sortOrder: number;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
 }
 ```

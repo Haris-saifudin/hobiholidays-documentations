@@ -44,7 +44,7 @@ src/
 ├── config/                  # Environment config validation (@nestjs/config)
 ├── database/                # DatabaseModule, TypeORM / Kysely connection pool
 └── modules/
-    ├── category/            # CategoryModule (2-Tier Parent-Child Taxonomy)
+    ├── category/            # CategoryModule (Multi-Dimensional Category Taxonomy: 4 Dimensions)
     ├── product/             # ProductModule (L1 Master Catalog)
     ├── product-hierarchy/   # ProductHierarchyModule (L2/L3 Variant, Trip, Pricing, Add-ons)
     ├── area/                # AreaModule (Continents, Sub-Continents, Countries, POIs)

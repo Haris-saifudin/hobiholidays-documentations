@@ -47,22 +47,44 @@ export class SearchTripDto {
   @IsString()
   productName?: string; // e.g. "Grand West Europe", "Tulip"
 
-  // 2-tier Category filters
+  // Multi-Dimensional Category filters
   @IsOptional()
-  @IsString()
-  parentCategorySlug?: string; // e.g. "tour-series", "special-interest"
+  @IsString({ each: true })
+  categorySlugs?: string[]; // Array or comma-separated slugs e.g. ['classic-series', 'spring-blossom']
+
+  @IsOptional()
+  @IsString({ each: true })
+  categoryIds?: string[]; // Array of UUID v4
 
   @IsOptional()
   @IsString()
-  parentCategoryId?: string; // UUID v4
+  travelStyleSlug?: string; // Dimension: TRAVEL_STYLE (e.g. "classic-series", "luxury-escapes")
 
   @IsOptional()
   @IsString()
-  categorySlug?: string; // e.g. "classic-series", "flower-season"
+  themeSlug?: string; // Dimension: THEME_INTEREST (e.g. "heritage-culture", "flower-season")
 
   @IsOptional()
   @IsString()
-  categoryId?: string; // UUID v4
+  seasonSlug?: string; // Dimension: SEASON_MOMENT (e.g. "spring-blossom", "autumn-foliage")
+
+  @IsOptional()
+  @IsString()
+  specialSlug?: string; // Dimension: SPECIAL_EXPERIENCE (e.g. "scenic-trains", "culinary-masterclass")
+
+  // Promotional Badges
+  @IsOptional()
+  @IsString()
+  badgeCode?: string; // e.g. "PASTI_BERANGKAT", "EARLY_BIRD"
+
+  @IsOptional()
+  @IsString({ each: true })
+  badgeCodes?: string[]; // Array of badge codes e.g. ["PASTI_BERANGKAT", "HOT_DEAL"]
+
+  // Duration Bracket
+  @IsOptional()
+  @IsString()
+  durationBracket?: '1-3' | '4-7' | '8-14' | '15+'; // Duration bracket filter (e.g. "4-7")
 
   // 4-tier Area filters
   @IsOptional()
@@ -161,17 +183,32 @@ export class SearchTripDto {
 // search-trip-response.interface.ts
 export interface DestinationHierarchyDto {
   continent: string;              // Always resolved (Root)
+  continentSlug?: string;
   subContinent?: string | null;   // Null when anchored directly to CONTINENT
+  subContinentSlug?: string | null;
   country?: string | null;        // Null when anchored to CONTINENT or SUB_CONTINENT
+  countrySlug?: string | null;
   poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
+  poiSlug?: string | null;
 }
 
 export type DestinationHierarchy = DestinationHierarchyDto;
 
-export interface CategorySummary {
+export interface CategoryAssignmentDto {
+  dimension: 'TRAVEL_STYLE' | 'THEME_INTEREST' | 'SEASON_MOMENT' | 'SPECIAL_EXPERIENCE';
+  dimensionName: string;
   id: string;
   name: string;
   slug: string;
+}
+
+export interface VariantBadgeDto {
+  id: string;
+  code: string;
+  label: string;
+  backgroundColor: string;
+  textColor: string;
+  iconUrl?: string | null;
 }
 
 export interface SearchVariantCard {
@@ -179,11 +216,11 @@ export interface SearchVariantCard {
   variantName: string;
   variantSlug: string;
   variantType: 'STANDARD' | 'SEASONAL' | 'THEMED' | 'PROMOTIONAL';
+  badges: VariantBadgeDto[];
   productId: string;
   productName: string;
   productSlug: string;
-  category: CategorySummary;
-  parentCategory: CategorySummary;
+  categories: CategoryAssignmentDto[];
   durationDays: number;
   durationNights: number;
   coverImageUrl: string;
@@ -240,34 +277,66 @@ Host: api.hobiholidays.com
       "variantName": "GWE Spring 2026",
       "variantSlug": "gwe-spring-2026",
       "variantType": "SEASONAL",
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440091",
+          "code": "PASTI_BERANGKAT",
+          "label": "⚡ Pasti Berangkat",
+          "backgroundColor": "#ECFDF5",
+          "textColor": "#065F46",
+          "iconUrl": null
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440093",
+          "code": "HOT_DEAL",
+          "label": "🔥 Hot Deal",
+          "backgroundColor": "#FEF2F2",
+          "textColor": "#991B1B",
+          "iconUrl": null
+        }
+      ],
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440081",
-        "name": "Classic Series",
-        "slug": "classic-series"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
-      "durationDays": 11,
-      "durationNights": 9,
+      "categories": [
+        {
+          "dimension": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "id": "550e8400-e29b-41d4-a716-446655440081",
+          "name": "Classic Series",
+          "slug": "classic-series"
+        },
+        {
+          "dimension": "SEASON_MOMENT",
+          "dimensionName": "Season & Moment",
+          "id": "550e8400-e29b-41d4-a716-446655440083",
+          "name": "Spring Cherry Blossom",
+          "slug": "spring-blossom"
+        }
+      ],
+      "durationDays": 7,
+      "durationNights": 6,
       "coverImageUrl": "https://cdn.hobiholidays.com/products/gwe/gwe-hero-paris.jpg",
       "destinations": [
         {
           "continent": "Europe",
+          "continentSlug": "europe",
           "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
           "country": "Netherlands",
-          "poi": "Keukenhof"
+          "countrySlug": "netherlands",
+          "poi": "Keukenhof",
+          "poiSlug": "keukenhof"
         },
         {
           "continent": "Europe",
+          "continentSlug": "europe",
           "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
           "country": "France",
-          "poi": "Eiffel Tower"
+          "countrySlug": "france",
+          "poi": "Eiffel Tower",
+          "poiSlug": "eiffel-tower"
         }
       ],
       "availableDates": [
@@ -282,34 +351,58 @@ Host: api.hobiholidays.com
       "variantName": "Tulip Keukenhof Special",
       "variantSlug": "tulip-keukenhof-special",
       "variantType": "THEMED",
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440092",
+          "code": "EARLY_BIRD",
+          "label": "🎟️ Early Bird Promo",
+          "backgroundColor": "#EFF6FF",
+          "textColor": "#1E40AF",
+          "iconUrl": null
+        }
+      ],
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440082",
-        "name": "Flower Season",
-        "slug": "flower-season"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
+      "categories": [
+        {
+          "dimension": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "id": "550e8400-e29b-41d4-a716-446655440081",
+          "name": "Classic Series",
+          "slug": "classic-series"
+        },
+        {
+          "dimension": "THEME_INTEREST",
+          "dimensionName": "Theme & Interest",
+          "id": "550e8400-e29b-41d4-a716-446655440082",
+          "name": "Flower Season",
+          "slug": "flower-season"
+        }
+      ],
       "durationDays": 9,
       "durationNights": 7,
       "coverImageUrl": "https://cdn.hobiholidays.com/products/gwe/keukenhof-tulips.jpg",
       "destinations": [
         {
           "continent": "Europe",
+          "continentSlug": "europe",
           "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
           "country": "Netherlands",
-          "poi": "Keukenhof"
+          "countrySlug": "netherlands",
+          "poi": "Keukenhof",
+          "poiSlug": "keukenhof"
         },
         {
           "continent": "Europe",
+          "continentSlug": "europe",
           "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
           "country": "Belgium",
-          "poi": "Grand Place"
+          "countrySlug": "belgium",
+          "poi": "Grand Place",
+          "poiSlug": "grand-place"
         }
       ],
       "availableDates": [
@@ -352,28 +445,48 @@ Host: api.hobiholidays.com
       "variantName": "Tulip Keukenhof Special",
       "variantSlug": "tulip-keukenhof-special",
       "variantType": "THEMED",
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440092",
+          "code": "EARLY_BIRD",
+          "label": "🎟️ Early Bird Promo",
+          "backgroundColor": "#EFF6FF",
+          "textColor": "#1E40AF",
+          "iconUrl": null
+        }
+      ],
       "productId": "550e8400-e29b-41d4-a716-446655440010",
       "productName": "Grand West Europe",
       "productSlug": "grand-west-europe",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440082",
-        "name": "Flower Season",
-        "slug": "flower-season"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
+      "categories": [
+        {
+          "dimension": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "id": "550e8400-e29b-41d4-a716-446655440081",
+          "name": "Classic Series",
+          "slug": "classic-series"
+        },
+        {
+          "dimension": "THEME_INTEREST",
+          "dimensionName": "Theme & Interest",
+          "id": "550e8400-e29b-41d4-a716-446655440082",
+          "name": "Flower Season",
+          "slug": "flower-season"
+        }
+      ],
       "durationDays": 9,
       "durationNights": 7,
       "coverImageUrl": "https://cdn.hobiholidays.com/products/gwe/keukenhof-tulips.jpg",
       "destinations": [
         {
           "continent": "Europe",
+          "continentSlug": "europe",
           "subContinent": "Western Europe",
+          "subContinentSlug": "western-europe",
           "country": "Netherlands",
-          "poi": "Keukenhof"
+          "countrySlug": "netherlands",
+          "poi": "Keukenhof",
+          "poiSlug": "keukenhof"
         }
       ],
       "availableDates": [
@@ -385,8 +498,6 @@ Host: api.hobiholidays.com
   ]
 }
 ```
-
----
 
 ---
 
@@ -419,13 +530,22 @@ export interface DestinationCountryOption {
   pois: DestinationPoiOption[];
 }
 
+export interface DestinationSubContinentOption {
+  id: string; // UUID v4
+  name: string;
+  slug: string;
+  areaType: 'SUB_CONTINENT';
+  activePackagesCount: number;
+  countries: DestinationCountryOption[];
+}
+
 export interface DestinationContinentOption {
   id: string; // UUID v4
   name: string;
   slug: string;
   areaType: 'CONTINENT';
   activePackagesCount: number;
-  countries: DestinationCountryOption[];
+  subContinents: DestinationSubContinentOption[];
 }
 
 export interface CategoryChildOption {
@@ -435,11 +555,28 @@ export interface CategoryChildOption {
   activePackagesCount: number;
 }
 
-export interface CategoryParentOption {
+export interface CategoryOption {
   id: string; // UUID v4
   name: string;
   slug: string;
-  children: CategoryChildOption[];
+  activePackagesCount: number;
+  children?: CategoryChildOption[];
+}
+
+export interface CategoryDimensionOption {
+  id: string; // UUID v4
+  code: 'TRAVEL_STYLE' | 'THEME_INTEREST' | 'SEASON_MOMENT' | 'SPECIAL_EXPERIENCE';
+  name: string;
+  categories: CategoryOption[];
+}
+
+export interface BadgeOption {
+  id: string; // UUID v4
+  code: string;
+  label: string;
+  backgroundColor: string;
+  textColor: string;
+  activePackagesCount: number;
 }
 
 export interface PriceRangeOption {
@@ -460,11 +597,19 @@ export interface VariantTypeOption {
   count: number;
 }
 
+export interface DurationBracketOption {
+  key: '1-3' | '4-7' | '8-14' | '15+';
+  label: string;
+  count: number;
+}
+
 export interface FilterOptionsResponseDto {
   destinations: DestinationContinentOption[];
-  categories: CategoryParentOption[];
+  categories: CategoryDimensionOption[];
+  badges: BadgeOption[];
   priceRange: PriceRangeOption;
   departureMonths: DepartureMonthOption[];
+  durationBrackets: DurationBracketOption[];
   variantTypes: VariantTypeOption[];
 }
 ```
@@ -483,36 +628,45 @@ export interface FilterOptionsResponseDto {
         "slug": "europe",
         "areaType": "CONTINENT",
         "activePackagesCount": 14,
-        "countries": [
+        "subContinents": [
           {
             "id": "550e8400-e29b-41d4-a716-446655440002",
-            "name": "Netherlands",
-            "slug": "netherlands",
-            "areaType": "COUNTRY",
-            "activePackagesCount": 6,
-            "pois": [
+            "name": "Western Europe",
+            "slug": "western-europe",
+            "areaType": "SUB_CONTINENT",
+            "activePackagesCount": 10,
+            "countries": [
               {
                 "id": "550e8400-e29b-41d4-a716-446655440003",
-                "name": "Keukenhof Gardens",
-                "slug": "keukenhof",
-                "areaType": "POI",
-                "activePackagesCount": 4
-              }
-            ]
-          },
-          {
-            "id": "550e8400-e29b-41d4-a716-446655440004",
-            "name": "Turkey",
-            "slug": "turkey",
-            "areaType": "COUNTRY",
-            "activePackagesCount": 8,
-            "pois": [
+                "name": "Netherlands",
+                "slug": "netherlands",
+                "areaType": "COUNTRY",
+                "activePackagesCount": 6,
+                "pois": [
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440004",
+                    "name": "Keukenhof Gardens",
+                    "slug": "keukenhof",
+                    "areaType": "POI",
+                    "activePackagesCount": 4
+                  }
+                ]
+              },
               {
                 "id": "550e8400-e29b-41d4-a716-446655440005",
-                "name": "Cappadocia",
-                "slug": "cappadocia",
-                "areaType": "POI",
-                "activePackagesCount": 5
+                "name": "France",
+                "slug": "france",
+                "areaType": "COUNTRY",
+                "activePackagesCount": 4,
+                "pois": [
+                  {
+                    "id": "550e8400-e29b-41d4-a716-446655440006",
+                    "name": "Eiffel Tower",
+                    "slug": "eiffel-tower",
+                    "areaType": "POI",
+                    "activePackagesCount": 4
+                  }
+                ]
               }
             ]
           }
@@ -521,23 +675,92 @@ export interface FilterOptionsResponseDto {
     ],
     "categories": [
       {
-        "id": "550e8400-e29b-41d4-a716-446655440010",
-        "name": "Tour Series",
-        "slug": "tour-series",
-        "children": [
+        "id": "550e8400-e29b-41d4-a716-446655440071",
+        "code": "TRAVEL_STYLE",
+        "name": "Travel Style",
+        "categories": [
           {
-            "id": "550e8400-e29b-41d4-a716-446655440011",
+            "id": "550e8400-e29b-41d4-a716-446655440081",
             "name": "Classic Series",
             "slug": "classic-series",
             "activePackagesCount": 8
           },
           {
-            "id": "550e8400-e29b-41d4-a716-446655440012",
+            "id": "550e8400-e29b-41d4-a716-446655440082",
+            "name": "Luxury Escapes",
+            "slug": "luxury-escapes",
+            "activePackagesCount": 3
+          }
+        ]
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440072",
+        "code": "THEME_INTEREST",
+        "name": "Theme & Interest",
+        "categories": [
+          {
+            "id": "550e8400-e29b-41d4-a716-446655440083",
+            "name": "Heritage & Culture",
+            "slug": "heritage-culture",
+            "activePackagesCount": 7
+          },
+          {
+            "id": "550e8400-e29b-41d4-a716-446655440084",
             "name": "Flower Season",
             "slug": "flower-season",
             "activePackagesCount": 6
           }
         ]
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440073",
+        "code": "SEASON_MOMENT",
+        "name": "Season & Moment",
+        "categories": [
+          {
+            "id": "550e8400-e29b-41d4-a716-446655440085",
+            "name": "Spring Cherry Blossom",
+            "slug": "spring-blossom",
+            "activePackagesCount": 5
+          },
+          {
+            "id": "550e8400-e29b-41d4-a716-446655440086",
+            "name": "Autumn Foliage",
+            "slug": "autumn-foliage",
+            "activePackagesCount": 4
+          }
+        ]
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440074",
+        "code": "SPECIAL_EXPERIENCE",
+        "name": "Special Experience",
+        "categories": [
+          {
+            "id": "550e8400-e29b-41d4-a716-446655440087",
+            "name": "Scenic Train Rides",
+            "slug": "scenic-trains",
+            "activePackagesCount": 3
+          }
+        ]
+      }
+    ],
+    "badges": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440091",
+        "code": "PASTI_BERANGKAT",
+        "label": "⚡ Pasti Berangkat",
+        "backgroundColor": "#ECFDF5",
+        "textColor": "#065F46",
+        "activePackagesCount": 6
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440092",
+        "code": "EARLY_BIRD",
+        "label": "🎟️ Early Bird Promo",
+        "backgroundColor": "#EFF6FF",
+        "textColor": "#1E40AF",
+        "activePackagesCount": 4
       }
     ],
     "priceRange": {
@@ -560,6 +783,18 @@ export interface FilterOptionsResponseDto {
         "value": "2026-10",
         "label": "October 2026",
         "activeTripsCount": 4
+      }
+    ],
+    "durationBrackets": [
+      {
+        "key": "4-7",
+        "label": "4 - 7 Hari",
+        "count": 5
+      },
+      {
+        "key": "8-14",
+        "label": "8 - 14 Hari",
+        "count": 9
       }
     ],
     "variantTypes": [

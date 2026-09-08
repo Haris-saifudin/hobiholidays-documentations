@@ -5,12 +5,14 @@
 >
 > **Core Architectural Principles:**
 > - **Slug-Based Path Identification:** All master products (`/api/v1/products/:slug`) and bookable tour variants (`/api/v1/variants/:slug`) use indexed, human-readable natural slugs as their primary URL path parameters.
-> - **Category Taxonomy:** 2-tier parent-child category tree (`product_categories`) linked to Products.
+> - **Slug-Based Path Identification:** All master products (`/api/v1/products/:slug`) and bookable tour variants (`/api/v1/variants/:slug`) use indexed, human-readable natural slugs as their primary URL path parameters.
+> - **Category Taxonomy:** Multi-dimensional taxonomy architecture across 4 orthogonal dimensions (`category_dimensions`: `TRAVEL_STYLE`, `THEME_INTEREST`, `SEASON_MOMENT`, `SPECIAL_EXPERIENCE`) with modular scoped assignments (`product_category_assignments`) for L1 Products (inherited by all variants) and L2 Variants (specific tags/overrides).
 > - **Flexible Flat Geography (No PostGIS):** `product_locations.area_id` anchors to ANY level in the 4-tier geography tree (`CONTINENT`, `SUB_CONTINENT`, `COUNTRY`, `POI`). Returns flat nullable structures with dynamic upward traversal. PostGIS, spatial types, and coordinates are eliminated from the catalog contract.
 > - **Read-Only Nominal Availability (Decoupled Concurrency Locking):** Catalog endpoints surface nominal available seat capacity ($\text{availableSeats} = \max(0, \text{max\_quota} - \text{booked\_seats})$). Concurrency locking and transactional quota allocation are delegated downstream to Phase 3 (Booking Domain).
 > - **Safe & Idempotent Catalog Lifecycle:** ATW catalog synchronization is non-destructive and governed by `listing_status` and `deleted_at` timestamps without hard cascading drops.
 > - **Itinerary Hierarchy:** Owned at **Variant level (L2)** as default master itinerary, with optional override at **Trip level (L3)**.
 > - **Pricing & Add-on Architecture:** Base price is all-inclusive, scoped by age band (`ADULT`, `INFANT`) with dynamic `consumes_quota` boolean flag. Excluded optional extras are modeled via `product_addons`.
+> - **Itemized Pricing Breakdown Components:** Itemizes the bundled cost composition of each tier's selling price (`product_pricing_components`: Visa fee, airport transfer, tips, flights) explaining what the package price covers.
 > - **Itinerary PDF Brochure:** Generated externally by ATW. Endpoints store and return the external brochure URL (`itineraryPdfUrl`), with Variant override falling back to Base Product.
 >
 > **Related Design Document:** [Product Technical Design](../technical/product-technical-design.md)  
@@ -23,13 +25,19 @@
 
 | Category | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
-| **Product Categories** | `GET` | `/api/v1/categories/tree` | Global 2-tier parent-child category tree |
-| | `GET` | `/api/v1/categories` | List all product categories |
-| | `POST` | `/api/v1/categories` | Create product category (parent or child) |
-| **Base Product (L1)** | `POST` | `/api/v1/products` | Create new master product + journey duration + category binding |
-| | `GET` | `/api/v1/products` | List all master products with pagination, category filter & status |
-| | `GET` | `/api/v1/products/:slug` | **Base Product Details** (headline, category, duration, brochure URL) |
-| | `PUT` | `/api/v1/products/:slug` | Update master product base info & category |
+| **Taxonomy Dimensions** | `GET` | `/api/v1/categories/dimensions` | List all taxonomy dimensions (Travel Style, Theme, Season, Special Experience) |
+| | `GET` | `/api/v1/categories/dimensions/:code` | Get dimension details by unique code |
+| **Product Categories** | `GET` | `/api/v1/categories/tree` | Complete multi-dimensional category tree grouped by dimension |
+| | `GET` | `/api/v1/categories` | List product categories filterable by dimension and active status |
+| | `POST` | `/api/v1/categories` | Create product category linked to dimension with optional parent |
+| **Category Assignments** | `GET` | `/api/v1/products/:slug/categories` | Get category assignments for master product (L1) |
+| | `PUT` | `/api/v1/products/:slug/categories` | Replace category assignments for master product (L1) |
+| | `GET` | `/api/v1/variants/:slug/categories` | Get category assignments & overrides for variant (L2) |
+| | `PUT` | `/api/v1/variants/:slug/categories` | Replace category assignments & overrides for variant (L2) |
+| **Base Product (L1)** | `POST` | `/api/v1/products` | Create new master product + journey duration + category assignments |
+| | `GET` | `/api/v1/products` | List all master products with pagination, multi-dimensional category filter & status |
+| | `GET` | `/api/v1/products/:slug` | **Base Product Details** (headline, categories, duration, brochure URL) |
+| | `PUT` | `/api/v1/products/:slug` | Update master product base info & status |
 | | `DELETE`| `/api/v1/products/:slug` | Soft delete master product |
 | **Split Sub-Resources** | `GET` | `/api/v1/products/:slug/media` | **Product Media** (covers, galleries, brochure) |
 | | `GET` | `/api/v1/products/:slug/locations` | **Product Locations** (destination markers & 4-tier Area tree) |
@@ -56,7 +64,7 @@
 | | `PUT` | `/api/v1/trips/:tripId/itinerary` | Upsert trip-specific itinerary override |
 | | `DELETE`| `/api/v1/trips/:tripId/itinerary` | Remove override (reverts to variant default) |
 | | `GET` | `/api/v1/trips/:tripId/effective-itinerary`| Resolved itinerary (`trip ?? variant`) with `isOverride` flag |
-| **L3 Trip Pricing** | `GET` | `/api/v1/trips/:tripId/pricings` | List pricing tiers by age band with itemized components |
+| **L3 Trip Pricing** | `GET` | `/api/v1/trips/:tripId/pricings` | List pricing tiers by age band with itemized breakdown components |
 | | `PUT` | `/api/v1/trips/:tripId/pricings` | Upsert pricing tier with breakdown components |
 | **Promotional Badges** | `GET` | `/api/v1/badges` | List all active promotional badges |
 | | `POST` | `/api/v1/badges` | Create promotional badge (Admin) |
@@ -67,10 +75,59 @@
 
 ---
 
-## 1. Product Category Endpoints
+## 1. Product Category Taxonomy & Assignment Endpoints
 
-### 1.1 Category Hierarchy Tree (`GET /api/v1/categories/tree`)
-Returns the complete 2-tier parent-child category tree. Cached with 24-hour TTL for storefront navigation and catalog filtering.
+### 1.1 Category Dimensions (`GET /api/v1/categories/dimensions`)
+Returns the 4 core taxonomy dimensions used for multi-faceted tour classification.
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Category dimensions retrieved successfully",
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440071",
+      "code": "TRAVEL_STYLE",
+      "name": "Format Operasional (Travel Style)",
+      "description": "Operational tour format (Paket Tour, Private Trip, Corporate & MICE, Signature 5-Star)",
+      "isMultiSelect": false,
+      "sortOrder": 1,
+      "isActive": true
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440072",
+      "code": "THEME_INTEREST",
+      "name": "Tema Wisata & Minat",
+      "description": "Core travel themes and experiential focus (Cultural & Wonders, Nature, Sakura, Safari)",
+      "isMultiSelect": true,
+      "sortOrder": 2,
+      "isActive": true
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440073",
+      "code": "SEASON_MOMENT",
+      "name": "Musim & Momen Liburan (Holiday Peak)",
+      "description": "Natural travel seasons and Indonesian holiday windows (Spring, Summer, NATARU, Lebaran)",
+      "isMultiSelect": true,
+      "sortOrder": 3,
+      "isActive": true
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440074",
+      "code": "SPECIAL_EXPERIENCE",
+      "name": "Preferensi Layanan & Dietary",
+      "description": "Dietary and demographic accommodations (Halal Friendly, Family Friendly, Senior Friendly)",
+      "isMultiSelect": true,
+      "sortOrder": 4,
+      "isActive": true
+    }
+  ]
+}
+```
+
+### 1.2 Multi-Dimensional Category Hierarchy Tree (`GET /api/v1/categories/tree`)
+Returns the complete category tree grouped by taxonomy dimension, supporting intra-dimension parent-child nesting.
 
 #### Success Response (200 OK)
 ```json
@@ -79,43 +136,152 @@ Returns the complete 2-tier parent-child category tree. Cached with 24-hour TTL 
   "message": "Category tree retrieved successfully",
   "data": [
     {
-      "id": "550e8400-e29b-41d4-a716-446655440080",
-      "name": "Tour Series",
-      "slug": "tour-series",
-      "description": "Standard scheduled group departure series",
-      "sortOrder": 1,
-      "children": [
+      "dimension": {
+        "id": "550e8400-e29b-41d4-a716-446655440071",
+        "code": "TRAVEL_STYLE",
+        "name": "Format Operasional (Travel Style)"
+      },
+      "categories": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440081",
-          "name": "Classic Series",
-          "slug": "classic-series",
-          "description": "Flagship classic itineraries covering iconic highlights",
-          "sortOrder": 1
+          "name": "Popular Group Tours",
+          "slug": "popular-group-tours",
+          "description": "Scheduled group departures with Indonesian tour leader",
+          "sortOrder": 1,
+          "children": []
         },
         {
           "id": "550e8400-e29b-41d4-a716-446655440082",
-          "name": "Flower Season",
-          "slug": "flower-season",
-          "description": "Seasonal bloom and festival focused journeys",
-          "sortOrder": 2
+          "name": "Private Trip",
+          "slug": "private-trip",
+          "description": "Customized private charter for families and closed groups",
+          "sortOrder": 2,
+          "children": []
         }
       ]
     },
     {
-      "id": "550e8400-e29b-41d4-a716-446655440090",
-      "name": "Special Interest",
-      "slug": "special-interest",
-      "description": "Themed and interest-based experiential travels",
-      "sortOrder": 2,
-      "children": [
+      "dimension": {
+        "id": "550e8400-e29b-41d4-a716-446655440072",
+        "code": "THEME_INTEREST",
+        "name": "Tema Wisata & Minat"
+      },
+      "categories": [
         {
-          "id": "550e8400-e29b-41d4-a716-446655440091",
-          "name": "Culinary & Wine",
-          "slug": "culinary-wine",
-          "description": "Gastronomic experiences and vineyard visits",
-          "sortOrder": 1
+          "id": "550e8400-e29b-41d4-a716-446655440083",
+          "name": "Cultural & Wonders",
+          "slug": "cultural-wonders",
+          "description": "Historical landmarks, world heritage, and cultural heritage",
+          "sortOrder": 1,
+          "children": []
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440084",
+          "name": "Sakura & Flower Blooms",
+          "slug": "sakura-flower-blooms",
+          "description": "Seasonal blooms, cherry blossoms, and tulip festivals",
+          "sortOrder": 2,
+          "children": []
         }
       ]
+    },
+    {
+      "dimension": {
+        "id": "550e8400-e29b-41d4-a716-446655440073",
+        "code": "SEASON_MOMENT",
+        "name": "Musim & Momen Liburan (Holiday Peak)"
+      },
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440085",
+          "name": "Spring & Sakura Season",
+          "slug": "spring-sakura-season",
+          "sortOrder": 1,
+          "children": []
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440086",
+          "name": "Summer Holiday",
+          "slug": "summer-holiday",
+          "sortOrder": 2,
+          "children": []
+        }
+      ]
+    },
+    {
+      "dimension": {
+        "id": "550e8400-e29b-41d4-a716-446655440074",
+        "code": "SPECIAL_EXPERIENCE",
+        "name": "Preferensi Layanan & Dietary"
+      },
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440087",
+          "name": "Halal / Muslim Friendly",
+          "slug": "halal-muslim-friendly",
+          "sortOrder": 1,
+          "children": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 1.3 Product Category Assignments (`GET /api/v1/products/:slug/categories` & `PUT /api/v1/products/:slug/categories`)
+Manages scoped multi-dimensional category assignments for a master product (L1) or variant (L2).
+
+#### Request DTO (`UpdateCategoryAssignmentsDto`)
+```typescript
+import { IsArray, ValidateNested, IsUUID, IsBoolean, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class CategoryAssignmentItemDto {
+  @IsUUID('4')
+  categoryId: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrimary?: boolean = false;
+}
+
+export class UpdateCategoryAssignmentsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoryAssignmentItemDto)
+  assignments: CategoryAssignmentItemDto[];
+}
+```
+
+#### Success Response (200 OK)
+```json
+{
+  "statusCode": 200,
+  "message": "Category assignments updated successfully",
+  "data": [
+    {
+      "categoryId": "550e8400-e29b-41d4-a716-446655440081",
+      "categoryName": "Popular Group Tours",
+      "categorySlug": "popular-group-tours",
+      "dimensionCode": "TRAVEL_STYLE",
+      "dimensionName": "Format Operasional (Travel Style)",
+      "isPrimary": true
+    },
+    {
+      "categoryId": "550e8400-e29b-41d4-a716-446655440083",
+      "categoryName": "Cultural & Wonders",
+      "categorySlug": "cultural-wonders",
+      "dimensionCode": "THEME_INTEREST",
+      "dimensionName": "Tema Wisata & Minat",
+      "isPrimary": true
+    },
+    {
+      "categoryId": "550e8400-e29b-41d4-a716-446655440087",
+      "categoryName": "Halal / Muslim Friendly",
+      "categorySlug": "halal-muslim-friendly",
+      "dimensionCode": "SPECIAL_EXPERIENCE",
+      "dimensionName": "Preferensi Layanan & Dietary",
+      "isPrimary": true
     }
   ]
 }
@@ -126,11 +292,11 @@ Returns the complete 2-tier parent-child category tree. Cached with 24-hour TTL 
 ## 2. Base Product Endpoints
 
 ### 2.1 List Products (`GET /api/v1/products`)
-Returns a paginated list of master products, filterable by status, product type, and category.
+Returns a paginated list of master products, filterable by listing status, product type, and multi-dimensional category taxonomy.
 
 #### Query Parameters (`ListProductsDto`)
 ```typescript
-import { IsOptional, IsString, IsIn, IsInt, Min, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsIn, IsInt, Min, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ListProductsDto {
@@ -145,12 +311,25 @@ export class ListProductsDto {
   productType?: string;
 
   @IsOptional()
-  @IsUUID('4')
-  categoryId?: string;
+  @IsArray()
+  @IsString({ each: true })
+  categorySlugs?: string[];
 
   @IsOptional()
   @IsString()
-  categorySlug?: string;
+  travelStyleSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  themeSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  seasonSlug?: string;
+
+  @IsOptional()
+  @IsString()
+  specialSlug?: string;
 
   @IsOptional()
   @IsString()
@@ -185,23 +364,36 @@ export class ListProductsDto {
   "data": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440010",
-      "code": "GWE",
+      "code": "GWE-MASTER",
       "name": "Grand West Europe",
       "slug": "grand-west-europe",
       "productType": "JOURNEY",
       "listingStatus": "ACTIVE",
-      "category": {
-        "id": "550e8400-e29b-41d4-a716-446655440081",
-        "name": "Classic Series",
-        "slug": "classic-series"
-      },
-      "parentCategory": {
-        "id": "550e8400-e29b-41d4-a716-446655440080",
-        "name": "Tour Series",
-        "slug": "tour-series"
-      },
-      "durationDays": 11,
-      "durationNights": 9,
+      "categories": [
+        {
+          "categoryId": "550e8400-e29b-41d4-a716-446655440081",
+          "categoryName": "Popular Group Tours",
+          "categorySlug": "popular-group-tours",
+          "dimensionCode": "TRAVEL_STYLE",
+          "isPrimary": true
+        },
+        {
+          "categoryId": "550e8400-e29b-41d4-a716-446655440083",
+          "categoryName": "Cultural & Wonders",
+          "categorySlug": "cultural-wonders",
+          "dimensionCode": "THEME_INTEREST",
+          "isPrimary": true
+        },
+        {
+          "categoryId": "550e8400-e29b-41d4-a716-446655440087",
+          "categoryName": "Halal / Muslim Friendly",
+          "categorySlug": "halal-muslim-friendly",
+          "dimensionCode": "SPECIAL_EXPERIENCE",
+          "isPrimary": true
+        }
+      ],
+      "durationDays": 7,
+      "durationNights": 6,
       "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
       "variantsCount": 5,
       "createdAt": "2026-09-04T08:00:00.000Z",
@@ -214,11 +406,13 @@ export class ListProductsDto {
 ---
 
 ### 2.2 Create Product (`POST /api/v1/products`)
-Creates a new master tour product with category binding and journey duration.
+Creates a new master tour product with category assignments and journey duration.
 
 #### Request DTO (`CreateProductDto`)
 ```typescript
-import { IsString, IsIn, IsInt, Min, IsUUID } from 'class-validator';
+import { IsString, IsIn, IsInt, Min, IsOptional, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CategoryAssignmentItemDto } from './category-assignment.dto';
 
 export class CreateProductDto {
   @IsString()
@@ -230,8 +424,11 @@ export class CreateProductDto {
   @IsString()
   slug: string; // e.g. "grand-west-europe"
 
-  @IsUUID('4')
-  categoryId: string; // Child category UUID (parent_category_id auto-resolved by trigger)
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoryAssignmentItemDto)
+  categories?: CategoryAssignmentItemDto[];
 
   @IsString()
   @IsIn(['JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'])
@@ -239,11 +436,15 @@ export class CreateProductDto {
 
   @IsInt()
   @Min(1)
-  durationDays: number; // e.g. 11
+  durationDays: number; // e.g. 7
 
   @IsInt()
   @Min(0)
-  durationNights: number; // e.g. 10
+  durationNights: number; // e.g. 6
+
+  @IsOptional()
+  @IsString()
+  itineraryPdfUrl?: string; // External ATW brochure URL
 }
 ```
 
@@ -257,16 +458,26 @@ export class CreateProductDto {
     "code": "GWE-MASTER",
     "name": "Grand West Europe",
     "slug": "grand-west-europe",
-    "categoryId": "550e8400-e29b-41d4-a716-446655440081",
-    "parentCategoryId": "550e8400-e29b-41d4-a716-446655440080",
     "productType": "JOURNEY",
     "listingStatus": "DRAFT",
-    "durationDays": 11,
-    "durationNights": 10,
+    "durationDays": 7,
+    "durationNights": 6,
     "itineraryPdfUrl": "https://atw-cdn.hobiholidays.com/brochures/gwe-master-brochure.pdf",
-    "createdAt": "2026-09-04T10:00:00.000Z"
+    "categories": [
+      {
+        "categoryId": "550e8400-e29b-41d4-a716-446655440081",
+        "categoryName": "Popular Group Tours",
+        "categorySlug": "popular-group-tours",
+        "dimensionCode": "TRAVEL_STYLE",
+        "isPrimary": true
+      }
+    ],
+    "createdAt": "2026-09-04T10:00:00.000Z",
+    "updatedAt": "2026-09-04T10:00:00.000Z"
   }
 }
+```
+
 ---
 
 ### 2.3 Get Base Product by Slug (`GET /api/v1/products/:slug`)
@@ -284,18 +495,31 @@ Fetches master product base details, journey duration, category taxonomy, and um
     "slug": "grand-west-europe",
     "productType": "JOURNEY",
     "listingStatus": "ACTIVE",
-    "category": {
-      "id": "550e8400-e29b-41d4-a716-446655440081",
-      "name": "Classic Series",
-      "slug": "classic-series"
-    },
-    "parentCategory": {
-      "id": "550e8400-e29b-41d4-a716-446655440080",
-      "name": "Tour Series",
-      "slug": "tour-series"
-    },
-    "durationDays": 11,
-    "durationNights": 9,
+    "categories": [
+      {
+        "categoryId": "550e8400-e29b-41d4-a716-446655440081",
+        "categoryName": "Popular Group Tours",
+        "categorySlug": "popular-group-tours",
+        "dimensionCode": "TRAVEL_STYLE",
+        "isPrimary": true
+      },
+      {
+        "categoryId": "550e8400-e29b-41d4-a716-446655440083",
+        "categoryName": "Cultural & Wonders",
+        "categorySlug": "cultural-wonders",
+        "dimensionCode": "THEME_INTEREST",
+        "isPrimary": true
+      },
+      {
+        "categoryId": "550e8400-e29b-41d4-a716-446655440087",
+        "categoryName": "Halal / Muslim Friendly",
+        "categorySlug": "halal-muslim-friendly",
+        "dimensionCode": "SPECIAL_EXPERIENCE",
+        "isPrimary": true
+      }
+    ],
+    "durationDays": 7,
+    "durationNights": 6,
     "itineraryPdfUrl": "https://cdn.hobiholidays.com/docs/itineraries/gwe-brochure.pdf",
     "createdAt": "2026-09-04T08:00:00.000Z",
     "updatedAt": "2026-09-04T09:30:00.000Z"
@@ -309,7 +533,9 @@ Fetches master product base details, journey duration, category taxonomy, and um
 
 #### Request DTO (`UpdateProductDto`)
 ```typescript
-import { IsString, IsOptional, IsIn, IsInt, Min, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsInt, Min, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CategoryAssignmentItemDto } from './category-assignment.dto';
 
 export class UpdateProductDto {
   @IsOptional()
@@ -321,8 +547,10 @@ export class UpdateProductDto {
   slug?: string;
 
   @IsOptional()
-  @IsUUID('4')
-  categoryId?: string;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CategoryAssignmentItemDto)
+  categories?: CategoryAssignmentItemDto[];
 
   @IsOptional()
   @IsString()
@@ -500,8 +728,8 @@ export class AttachProductLocationDto {
       "slug": "gwe-spring-2026",
       "variantType": "SEASONAL",
       "listingStatus": "ACTIVE",
-      "durationDays": 11,
-      "durationNights": 9,
+      "durationDays": 7,
+      "durationNights": 6,
       "startingPrice": 28000000.00,
       "currency": "IDR"
     }
@@ -933,7 +1161,7 @@ Resolves itinerary following the priority rule: returns **Trip-specific override
 ## 7. L3 Trip Pricing & Age Bands
 
 ### 7.1 List Trip Pricings (`GET /api/v1/trips/:tripId/pricings`)
-Returns pricing tiers for each traveler age band (`ADULT`, `INFANT`) along with whether each consumes seat quota (`consumesQuota`).
+Returns pricing tiers for each traveler age band (`ADULT`, `INFANT`) along with whether each consumes seat quota (`consumesQuota`) and itemized bundled breakdown components (`components`).
 
 #### Success Response (200 OK)
 ```json
@@ -945,26 +1173,44 @@ Returns pricing tiers for each traveler age band (`ADULT`, `INFANT`) along with 
       "id": "550e8400-e29b-41d4-a716-446655440041",
       "tripId": "550e8400-e29b-41d4-a716-446655440031",
       "ageBand": "ADULT",
-      "ageMin": 12,
-      "ageMax": null,
+      "minAge": 12,
+      "maxAge": null,
       "consumesQuota": true,
-      "basePrice": 32000000.00,
-      "sellingPrice": 28000000.00,
+      "basePrice": 12000000.00,
+      "sellingPrice": 10000000.00,
       "currency": "IDR",
       "components": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440051",
-          "name": "International Flight & Taxes",
-          "amount": 14000000.00,
+          "name": "Biaya Keberangkatan & Land Tour",
+          "amount": 9350000.00,
           "isIncluded": true,
-          "description": "Economy return flight with Qatar Airways"
+          "description": "Bundled international flight, 4-star hotels, coach & guided tours",
+          "sortOrder": 1
         },
         {
           "id": "550e8400-e29b-41d4-a716-446655440052",
-          "name": "4-Star Hotel Accommodation (Twin)",
-          "amount": 8000000.00,
+          "name": "Schengen Visa Fee",
+          "amount": 500000.00,
           "isIncluded": true,
-          "description": "9 nights twin-sharing in 4-star hotels"
+          "description": "Official consular visa application processing fee",
+          "sortOrder": 2
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440053",
+          "name": "Airport Shuttle & Transfer",
+          "amount": 100000.00,
+          "isIncluded": true,
+          "description": "Dedicated airport transfer between terminal and hotel",
+          "sortOrder": 3
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440054",
+          "name": "Tour Leader & Driver Tip",
+          "amount": 50000.00,
+          "isIncluded": true,
+          "description": "Mandatory gratuity for tour leader and local bus driver",
+          "sortOrder": 4
         }
       ]
     },
@@ -972,26 +1218,28 @@ Returns pricing tiers for each traveler age band (`ADULT`, `INFANT`) along with 
       "id": "550e8400-e29b-41d4-a716-446655440044",
       "tripId": "550e8400-e29b-41d4-a716-446655440031",
       "ageBand": "INFANT",
-      "ageMin": 0,
-      "ageMax": 2,
+      "minAge": 0,
+      "maxAge": 2,
       "consumesQuota": false,
-      "basePrice": 10000000.00,
-      "sellingPrice": 8500000.00,
+      "basePrice": 8000000.00,
+      "sellingPrice": 6500000.00,
       "currency": "IDR",
       "components": [
         {
           "id": "550e8400-e29b-41d4-a716-446655440058",
           "name": "Infant Airline Ticket & Tax",
-          "amount": 7500000.00,
+          "amount": 5500000.00,
           "isIncluded": true,
-          "description": "Lap infant international ticket"
+          "description": "Lap infant international airline ticket & government airport taxes",
+          "sortOrder": 1
         },
         {
           "id": "550e8400-e29b-41d4-a716-446655440059",
           "name": "Infant Travel Insurance & Admin",
           "amount": 1000000.00,
           "isIncluded": true,
-          "description": "Comprehensive infant travel insurance"
+          "description": "Comprehensive medical travel insurance and administrative handling",
+          "sortOrder": 2
         }
       ]
     }
@@ -1021,7 +1269,7 @@ import { Type } from 'class-transformer';
 
 export class CreatePricingComponentDto {
   @IsString()
-  name: string; // e.g. "International Flight & Taxes", "4-Star Hotel Accommodation"
+  name: string; // e.g. "Schengen Visa Fee", "Airport Shuttle & Transfer"
 
   @IsOptional()
   @IsString()
@@ -1050,12 +1298,12 @@ export class UpsertTripPricingDto {
   @IsOptional()
   @IsInt()
   @Min(0)
-  ageMin?: number;
+  minAge?: number;
 
   @IsOptional()
   @IsInt()
   @Min(0)
-  ageMax?: number;
+  maxAge?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -1090,23 +1338,39 @@ export class UpsertTripPricingDto {
     "id": "550e8400-e29b-41d4-a716-446655440041",
     "tripId": "550e8400-e29b-41d4-a716-446655440031",
     "ageBand": "ADULT",
+    "minAge": 12,
+    "maxAge": null,
     "consumesQuota": true,
-    "basePrice": 32000000.00,
-    "sellingPrice": 28000000.00,
+    "basePrice": 12000000.00,
+    "sellingPrice": 10000000.00,
     "components": [
       {
         "id": "550e8400-e29b-41d4-a716-446655440051",
-        "name": "International Flight & Taxes",
-        "amount": 14000000.00,
+        "name": "Biaya Keberangkatan & Land Tour",
+        "amount": 9350000.00,
         "isIncluded": true,
-        "description": "Economy return flight with Qatar Airways"
+        "description": "Bundled international flight, 4-star hotels, coach & guided tours"
       },
       {
         "id": "550e8400-e29b-41d4-a716-446655440052",
-        "name": "4-Star Hotel Accommodation (Twin)",
-        "amount": 8000000.00,
+        "name": "Schengen Visa Fee",
+        "amount": 500000.00,
         "isIncluded": true,
-        "description": "9 nights twin-sharing in 4-star hotels"
+        "description": "Official consular visa application processing fee"
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440053",
+        "name": "Airport Shuttle & Transfer",
+        "amount": 100000.00,
+        "isIncluded": true,
+        "description": "Dedicated airport transfer between terminal and hotel"
+      },
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440054",
+        "name": "Tour Leader & Driver Tip",
+        "amount": 50000.00,
+        "isIncluded": true,
+        "description": "Mandatory gratuity for tour leader and local bus driver"
       }
     ]
   }

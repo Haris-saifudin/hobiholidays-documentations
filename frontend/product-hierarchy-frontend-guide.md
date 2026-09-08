@@ -29,17 +29,23 @@ The catalog surfaces distinct badging tokens based on `variant.variantType` and 
 import Image from 'next/image';
 import Link from 'next/link';
 
-export interface CategorySummary {
+export interface CategoryAssignmentDto {
   id: string;
   name: string;
   slug: string;
+  dimensionCode?: string;
+  dimensionName?: string;
 }
 
 export interface DestinationHierarchyDto {
   continent: string;
+  continentSlug?: string;
   subContinent?: string | null;
+  subContinentSlug?: string | null;
   country?: string | null;
+  countrySlug?: string | null;
   poi?: string | null;
+  poiSlug?: string | null;
 }
 
 export interface VariantBadge {
@@ -60,8 +66,7 @@ export interface VariantCardProps {
     slug: string;
     variantType: 'STANDARD' | 'SEASONAL' | 'THEMED' | 'PROMOTIONAL';
     badges?: VariantBadge[];
-    category?: CategorySummary;
-    parentCategory?: CategorySummary;
+    categories?: CategoryAssignmentDto[];
     destinations?: DestinationHierarchyDto[];
     durationDays: number;
     durationNights: number;
@@ -123,11 +128,11 @@ export function VariantCard({ variant }: VariantCardProps) {
           <span className={`px-2.5 py-1 rounded-full text-xs border font-medium shadow-sm backdrop-blur-md ${getBadgeStyle(variant.variantType)}`}>
             {variant.variantType}
           </span>
-          {variant.category && (
-            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-white/90 text-slate-700 shadow-sm backdrop-blur-md">
-              {variant.category.name}
+          {variant.categories?.slice(0, 1).map((cat) => (
+            <span key={cat.id} className="px-2.5 py-1 rounded-full text-xs font-medium bg-white/90 text-slate-700 shadow-sm backdrop-blur-md">
+              {cat.name}
             </span>
-          )}
+          ))}
         </div>
 
         {/* Duration Badge */}
@@ -143,9 +148,9 @@ export function VariantCard({ variant }: VariantCardProps) {
             <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
               {variant.product.name}
             </span>
-            {variant.parentCategory && (
+            {variant.categories && variant.categories.length > 1 && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
-                {variant.parentCategory.name}
+                {variant.categories[1].name}
               </span>
             )}
           </div>

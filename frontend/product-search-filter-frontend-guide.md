@@ -17,11 +17,11 @@
 ├──────────────────────────┬──────────────────────────────────────────────┤
 │ 🎛️ Filters Sidebar       │ Results: 14 Tour Packages Found              │
 │                          │ Active Chips: [Eropa ✕] [Classic Series ✕]   │
-│ • Category (2-tier)      ├──────────────────────────────────────────────┤
-│ • Destination (4-tier)   │ [VariantCard]   [VariantCard]   [VariantCard]│
-│ • Budget Range Slider    │ [VariantCard]   [VariantCard]   [VariantCard]│
-│ • Total Pack (1-20 Pax)  ├──────────────────────────────────────────────┤
-│ • Departure Month        │ Pagination: [ < Prev ] [ 1 ] [ 2 ] [ Next > ]│
+│ • 4 Dimensions Taxonomy  ├──────────────────────────────────────────────┤
+│ • 4-tier Geography       │ [VariantCard]   [VariantCard]   [VariantCard]│
+│ • Promotional Badges     │ [VariantCard]   [VariantCard]   [VariantCard]│
+│ • Duration Bracket       ├──────────────────────────────────────────────┤
+│ • Budget Range Slider    │ Pagination: [ < Prev ] [ 1 ] [ 2 ] [ Next > ]│
 └──────────────────────────┴──────────────────────────────────────────────┘
 ```
 
@@ -69,8 +69,13 @@ export function useSearchFilters() {
 
   return {
     filters: {
-      parentCategorySlug: searchParams.get('parentCategorySlug') || '',
-      categorySlug: searchParams.get('categorySlug') || '',
+      travelStyleSlug: searchParams.get('travelStyleSlug') || '',
+      themeSlug: searchParams.get('themeSlug') || '',
+      seasonSlug: searchParams.get('seasonSlug') || '',
+      specialSlug: searchParams.get('specialSlug') || '',
+      categorySlugs: searchParams.get('categorySlugs') || '',
+      badgeCode: searchParams.get('badgeCode') || '',
+      durationBracket: searchParams.get('durationBracket') || '',
       continentSlug: searchParams.get('continentSlug') || '',
       subContinentSlug: searchParams.get('subContinentSlug') || '',
       countrySlug: searchParams.get('countrySlug') || '',

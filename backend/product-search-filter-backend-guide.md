@@ -46,31 +46,75 @@ export class SearchSqlBuilderService {
     const values: any[] = [];
     let idx = 1;
 
-    // 1. Category Filters (2-tier taxonomy)
-    const category = dto.categorySlug || dto.categoryId;
-    if (category) {
+    // 1. Multi-Dimensional Category Filters (via product_category_assignments)
+    const categorySlugs = dto.categorySlugs || (dto.categorySlug ? [dto.categorySlug] : []);
+    if (categorySlugs.length > 0) {
       conditions.push(`
         EXISTS (
-          SELECT 1 FROM product_categories cat
-          WHERE cat.id = p.category_id
-            AND (cat.id::text = $${idx} OR cat.slug = $${idx})
+          SELECT 1 FROM product_category_assignments pca
+          INNER JOIN product_categories pc ON pc.id = pca.category_id
+          WHERE pca.product_id = p.id
+            AND pc.slug = ANY($${idx})
+            AND pc.is_active = TRUE
         )
       `);
-      values.push(category);
+      values.push(categorySlugs);
       idx++;
     }
 
-    const parentCategory = dto.parentCategorySlug || dto.parentCategoryId;
-    if (parentCategory) {
+    const specificSlugs = [
+      { slug: dto.travelStyleSlug, dimension: 'TRAVEL_STYLE' },
+      { slug: dto.themeSlug, dimension: 'THEME_INTEREST' },
+      { slug: dto.seasonSlug, dimension: 'SEASON_MOMENT' },
+      { slug: dto.specialSlug, dimension: 'SPECIAL_EXPERIENCE' },
+    ];
+
+    for (const dim of specificSlugs) {
+      if (dim.slug) {
+        conditions.push(`
+          EXISTS (
+            SELECT 1 FROM product_category_assignments pca
+            INNER JOIN product_categories pc ON pc.id = pca.category_id
+            INNER JOIN category_dimensions cd ON cd.id = pc.dimension_id
+            WHERE pca.product_id = p.id
+              AND cd.code = '${dim.dimension}'
+              AND pc.slug = $${idx}
+              AND pc.is_active = TRUE
+          )
+        `);
+        values.push(dim.slug);
+        idx++;
+      }
+    }
+
+    // 1.1 Promotional Badges Filter (via product_variant_badges)
+    const badgeCodes = dto.badgeCodes || (dto.badgeCode ? [dto.badgeCode] : []);
+    if (badgeCodes.length > 0) {
       conditions.push(`
         EXISTS (
-          SELECT 1 FROM product_categories pcat
-          WHERE pcat.id = p.parent_category_id
-            AND (pcat.id::text = $${idx} OR pcat.slug = $${idx})
+          SELECT 1 FROM product_variant_badges pvb
+          INNER JOIN product_badges pb ON pb.id = pvb.badge_id
+          WHERE pvb.variant_id = v.id
+            AND pb.code = ANY($${idx})
+            AND pb.is_active = TRUE
         )
       `);
-      values.push(parentCategory);
+      values.push(badgeCodes);
       idx++;
+    }
+
+    // 1.2 Duration Bracket Filter
+    if (dto.durationBracket) {
+      const [minD, maxD] = dto.durationBracket === '1-3' ? [1, 3] :
+                           dto.durationBracket === '4-7' ? [4, 7] :
+                           dto.durationBracket === '8-14' ? [8, 14] :
+                           dto.durationBracket === '15+' ? [15, 999] : [0, 999];
+      conditions.push(`
+        COALESCE(v.duration_days, pj.duration_days) >= $${idx}
+        AND COALESCE(v.duration_days, pj.duration_days) <= $${idx + 1}
+      `);
+      values.push(minD, maxD);
+      idx += 2;
     }
 
     // 2. Geographic Filters (Flexible Flat Anchoring: POI -> Country -> Sub-Continent -> Continent)
@@ -237,12 +281,38 @@ export class SearchSqlBuilderService {
         p.name AS product_name,
         p.slug AS product_slug,
         p.itinerary_pdf_url,
-        cat.id AS category_id,
-        cat.name AS category_name,
-        cat.slug AS category_slug,
-        pcat.id AS parent_category_id,
-        pcat.name AS parent_category_name,
-        pcat.slug AS parent_category_slug,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'id', pc.id,
+              'name', pc.name,
+              'slug', pc.slug,
+              'dimensionCode', cd.code,
+              'dimensionName', cd.name
+            ) ORDER BY cd.sort_order ASC, pc.sort_order ASC)
+            FROM product_category_assignments pca
+            INNER JOIN product_categories pc ON pc.id = pca.category_id
+            INNER JOIN category_dimensions cd ON cd.id = pc.dimension_id
+            WHERE pca.product_id = p.id AND pc.is_active = TRUE
+          ),
+          '[]'::json
+        ) AS categories,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'id', pb.id,
+              'code', pb.code,
+              'label', pb.label,
+              'backgroundColor', pb.background_color,
+              'textColor', pb.text_color,
+              'iconUrl', pb.icon_url
+            ) ORDER BY pb.created_at ASC)
+            FROM product_variant_badges pvb
+            INNER JOIN product_badges pb ON pb.id = pvb.badge_id
+            WHERE pvb.variant_id = v.id AND pb.is_active = TRUE
+          ),
+          '[]'::json
+        ) AS badges,
         (
           SELECT m.url FROM product_media_usages pmu
           INNER JOIN product_media m ON m.id = pmu.media_id
@@ -256,9 +326,13 @@ export class SearchSqlBuilderService {
           (
             SELECT json_agg(json_build_object(
               'continent', continent_area.name,
+              'continentSlug', continent_area.slug,
               'subContinent', subcont_area.name,
+              'subContinentSlug', subcont_area.slug,
               'country', country_area.name,
-              'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END
+              'countrySlug', country_area.slug,
+              'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END,
+              'poiSlug', CASE WHEN target_area.area_type_id = 4 THEN target_area.slug ELSE NULL END
             ) ORDER BY pl.sort_order ASC)
             FROM product_locations pl
             INNER JOIN areas target_area ON target_area.id = pl.area_id
@@ -303,8 +377,6 @@ export class SearchSqlBuilderService {
         COUNT(*) OVER() AS total_packages
       FROM product_variants v
       INNER JOIN products p ON p.id = v.product_id
-      LEFT JOIN product_categories cat ON cat.id = p.category_id
-      LEFT JOIN product_categories pcat ON pcat.id = p.parent_category_id
       LEFT JOIN product_journeys pj ON pj.product_id = p.id
       WHERE ${conditions.join(' AND ')}
       ORDER BY starting_price ASC NULLS LAST, v.created_at DESC
@@ -351,16 +423,8 @@ export class SearchFilterService {
       productId: r.product_id,
       productName: r.product_name,
       productSlug: r.product_slug,
-      category: r.category_id ? {
-        id: r.category_id,
-        name: r.category_name,
-        slug: r.category_slug,
-      } : null,
-      parentCategory: r.parent_category_id ? {
-        id: r.parent_category_id,
-        name: r.parent_category_name,
-        slug: r.parent_category_slug,
-      } : null,
+      categories: r.categories || [],
+      badges: r.badges || [],
       durationDays: r.duration_days,
       durationNights: r.duration_nights,
       startingPrice: r.starting_price ? parseFloat(r.starting_price) : 0,
@@ -673,9 +737,13 @@ export class SearchFilterService {
     const sql = `
       WITH active_cats AS (
           SELECT 
-              p.category_id,
+              pca.category_id,
               COUNT(DISTINCT v.id) AS package_count
-          FROM products p
+          FROM product_category_assignments pca
+          INNER JOIN products p 
+              ON p.id = pca.product_id 
+             AND p.listing_status = 'ACTIVE' 
+             AND p.deleted_at IS NULL
           INNER JOIN product_variants v 
               ON v.product_id = p.id 
              AND v.listing_status = 'ACTIVE' 
@@ -684,19 +752,22 @@ export class SearchFilterService {
               ON t.variant_id = v.id 
              AND t.status = 'ACTIVE' 
              AND t.start_date >= CURRENT_DATE
-          WHERE p.listing_status = 'ACTIVE' 
-            AND p.deleted_at IS NULL
-          GROUP BY p.category_id
+          GROUP BY pca.category_id
       )
       SELECT 
           c.id, 
+          c.dimension_id,
+          cd.code AS dimension_code,
+          cd.name AS dimension_name,
           c.parent_id, 
           c.name, 
           c.slug,
           COALESCE(ac.package_count, 0) AS package_count
       FROM product_categories c
+      INNER JOIN category_dimensions cd ON cd.id = c.dimension_id
       LEFT JOIN active_cats ac ON ac.category_id = c.id
-      ORDER BY c.name ASC;
+      WHERE c.is_active = TRUE
+      ORDER BY cd.sort_order ASC, c.sort_order ASC, c.name ASC;
     `;
     return this.dataSource.query(sql);
   }

@@ -69,16 +69,27 @@ export class ProductHierarchyService {
         -- Duration inheritance resolution:
         COALESCE(v.duration_days, pj.duration_days) AS duration_days,
         COALESCE(v.duration_nights, pj.duration_nights) AS duration_nights,
-        -- Parent master brand info & Category taxonomy:
+        -- Parent master brand info:
         p.id AS product_id,
         p.name AS product_name,
         p.slug AS product_slug,
-        cat.id AS category_id,
-        cat.name AS category_name,
-        cat.slug AS category_slug,
-        pcat.id AS parent_category_id,
-        pcat.name AS parent_category_name,
-        pcat.slug AS parent_category_slug,
+        -- Multi-dimensional Category taxonomy (via product_category_assignments):
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'id', pc.id,
+              'name', pc.name,
+              'slug', pc.slug,
+              'dimensionCode', cd.code,
+              'dimensionName', cd.name
+            ) ORDER BY cd.sort_order ASC, pc.sort_order ASC)
+            FROM product_category_assignments pca
+            INNER JOIN product_categories pc ON pc.id = pca.category_id
+            INNER JOIN category_dimensions cd ON cd.id = pc.dimension_id
+            WHERE pca.product_id = p.id AND pc.is_active = TRUE
+          ),
+          '[]'::json
+        ) AS categories,
         -- Starting price aggregation (Lowest ADULT selling_price):
         COALESCE(
           (
@@ -119,9 +130,13 @@ export class ProductHierarchyService {
           (
             SELECT json_agg(json_build_object(
               'continent', continent_area.name,
+              'continentSlug', continent_area.slug,
               'subContinent', subcont_area.name,
+              'subContinentSlug', subcont_area.slug,
               'country', country_area.name,
-              'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END
+              'countrySlug', country_area.slug,
+              'poi', CASE WHEN target_area.area_type_id = 4 THEN COALESCE(pl.area_name, target_area.name) ELSE NULL END,
+              'poiSlug', CASE WHEN target_area.area_type_id = 4 THEN target_area.slug ELSE NULL END
             ) ORDER BY pl.sort_order ASC)
             FROM product_locations pl
             INNER JOIN areas target_area ON target_area.id = pl.area_id
@@ -166,8 +181,6 @@ export class ProductHierarchyService {
         ) AS badges
       FROM product_variants v
       INNER JOIN products p ON p.id = v.product_id
-      LEFT JOIN product_categories cat ON cat.id = p.category_id
-      LEFT JOIN product_categories pcat ON pcat.id = p.parent_category_id
       LEFT JOIN product_journeys pj ON pj.product_id = p.id
       WHERE v.listing_status = 'ACTIVE'
         AND p.listing_status = 'ACTIVE'
@@ -198,8 +211,7 @@ export class ProductHierarchyService {
       productId: r.product_id,
       productName: r.product_name,
       productSlug: r.product_slug,
-      category: r.category_id ? { id: r.category_id, name: r.category_name, slug: r.category_slug } : null,
-      parentCategory: r.parent_category_id ? { id: r.parent_category_id, name: r.parent_category_name, slug: r.parent_category_slug } : null,
+      categories: r.categories || [],
       durationDays: r.duration_days,
       durationNights: r.duration_nights,
       coverUrl: r.cover_url || 'https://cdn.hobiholidays.com/defaults/cover.jpg',
@@ -237,12 +249,24 @@ export class ProductHierarchyService {
         COALESCE(v.duration_nights, pj.duration_nights) AS duration_nights,
         COALESCE(v.itinerary_pdf_url, p.itinerary_pdf_url) AS itinerary_pdf_url,
         p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
-        cat.id AS category_id, cat.name AS category_name, cat.slug AS category_slug,
-        pcat.id AS parent_category_id, pcat.name AS parent_category_name, pcat.slug AS parent_category_slug
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'id', pc.id,
+              'name', pc.name,
+              'slug', pc.slug,
+              'dimensionCode', cd.code,
+              'dimensionName', cd.name
+            ) ORDER BY cd.sort_order ASC, pc.sort_order ASC)
+            FROM product_category_assignments pca
+            INNER JOIN product_categories pc ON pc.id = pca.category_id
+            INNER JOIN category_dimensions cd ON cd.id = pc.dimension_id
+            WHERE pca.product_id = p.id AND pc.is_active = TRUE
+          ),
+          '[]'::json
+        ) AS categories
       FROM product_variants v
       INNER JOIN products p ON p.id = v.product_id
-      LEFT JOIN product_categories cat ON cat.id = p.category_id
-      LEFT JOIN product_categories pcat ON pcat.id = p.parent_category_id
       LEFT JOIN product_journeys pj ON pj.product_id = p.id
       WHERE v.slug = $1 AND v.listing_status = 'ACTIVE'
       LIMIT 1;
@@ -271,13 +295,43 @@ export class ProductHierarchyService {
       ORDER BY name ASC;
     `, [variant.id]);
 
-    // Fetch upcoming departures with available capacity and age-band pricings
+    // Fetch upcoming departures with available capacity, age-band pricings, and itemized components
     const trips = await this.dataSource.query(`
       SELECT
         t.id, t.trip_code, t.start_date, t.end_date, t.status,
         t.min_quota, t.max_quota,
         (t.max_quota - COALESCE(b.booked_count, 0)) AS available_seats,
-        EXISTS(SELECT 1 FROM product_itineraries pi WHERE pi.trip_id = t.id AND pi.is_active = TRUE) AS has_trip_override
+        EXISTS(SELECT 1 FROM product_itineraries pi WHERE pi.trip_id = t.id AND pi.is_active = TRUE) AS has_trip_override,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'id', ptp.id,
+              'ageBand', ptp.age_band,
+              'minAge', ptp.min_age,
+              'maxAge', ptp.max_age,
+              'consumesQuota', ptp.consumes_quota,
+              'basePrice', ptp.base_price,
+              'sellingPrice', ptp.selling_price,
+              'currency', ptp.currency,
+              'components', COALESCE(
+                (
+                  SELECT json_agg(json_build_object(
+                    'name', ppc.name,
+                    'amount', ppc.amount,
+                    'isIncluded', ppc.is_included,
+                    'sortOrder', ppc.sort_order
+                  ) ORDER BY ppc.sort_order ASC)
+                  FROM product_pricing_components ppc
+                  WHERE ppc.pricing_id = ptp.id
+                ),
+                '[]'::json
+              )
+            ) ORDER BY ptp.age_band ASC)
+            FROM product_trip_pricings ptp
+            WHERE ptp.trip_id = t.id
+          ),
+          '[]'::json
+        ) AS pricings
       FROM product_trips t
       LEFT JOIN (
         SELECT ptb.trip_id, SUM(CASE WHEN ptp.consumes_quota THEN 1 ELSE 0 END) AS booked_count
@@ -305,8 +359,7 @@ export class ProductHierarchyService {
         id: variant.product_id,
         name: variant.product_name,
         slug: variant.product_slug,
-        category: variant.category_id ? { id: variant.category_id, name: variant.category_name, slug: variant.category_slug } : null,
-        parentCategory: variant.parent_category_id ? { id: variant.parent_category_id, name: variant.parent_category_name, slug: variant.parent_category_slug } : null,
+        categories: variant.categories || [],
       },
       itinerary: defaultItinerary[0] || null,
       addons,
