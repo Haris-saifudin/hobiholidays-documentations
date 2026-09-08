@@ -132,10 +132,24 @@ Replaces the legacy nationality scope (domestic and international prices are ide
 | **`ADULT`** | Age 12+ years old (and standard bed occupancy) | Configurable `BOOLEAN` (Default `TRUE`) | Full adult rate, standard twin/double share accommodation and coach/flight seat. |
 | **`INFANT`** | Under 2 years (< 24 months) | Configurable `BOOLEAN` (Default `FALSE`) | Surcharge/tax rate. May consume quota (`TRUE`) if seat/bed is allocated, or not (`FALSE`) if travelling as a lap infant. |
 
-#### D. All-Inclusive Base Pricing & Excluded Add-on Subsystem
+#### D. All-Inclusive Bundled Pricing, Itemized Component Breakdown & Excluded Add-ons
 
-- **All-Inclusive Base Pricing (`product_trip_pricings`):** The base selling price represents the full package price, bundling international flights, hotel accommodations, meals, transport, tour leader, and entrance fees. Descriptive inclusions and exclusions are managed transparently via `product_supplementaries` (`INCLUDED` and `EXCLUDED`).
-- **Excluded Add-on Subsystem (`product_addons`):** Elective, optional upgrades and additions (`SINGLE_ROOM`, `BAGGAGE`, `FLIGHT_UPGRADE`, `EXPERIENTIAL_TOUR`, `INSURANCE`, `VISA_EXPRESS`, `SPECIAL_MEAL`). These items are **excluded** from the base package price. Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement the base price during booking checkout.
+Hobiholidays enforces a structured, transparent separation across 3 pricing sub-domains:
+
+1. **All-Inclusive Base Pricing & Itemized Breakdown (`product_trip_pricings` & `product_pricing_components`):**
+   - The tier selling price (e.g. `ADULT = IDR 10.000.000`) represents the **bundled package rate**.
+   - `product_pricing_components` provides the concrete itemized cost composition explaining to the customer and financial systems exactly what the Adult price covers besides the base departure cost:
+     $$\text{selling\_price} = \text{base\_departure\_amount} + \sum_{i=1}^{n} \text{included\_component\_amount}_i$$
+     *Real-World Example (GWE Summer Adult = IDR 10.000.000):*
+     - **Biaya Keberangkatan & Land Tour:** IDR 9.350.000
+     - **Schengen Visa Fee:** IDR 500.000 (`is_included = TRUE`)
+     - **Airport Shuttle / Transfer:** IDR 100.000 (`is_included = TRUE`)
+     - **Tour Leader & Driver Tipping:** IDR 50.000 (`is_included = TRUE`)
+2. **Excluded Add-on Subsystem (`product_addons`):**
+   - Elective, optional upgrades and additions (`SINGLE_ROOM`, `BAGGAGE`, `FLIGHT_UPGRADE`, `EXPERIENTIAL_TOUR`, `INSURANCE`, `VISA_EXPRESS`, `SPECIAL_MEAL`).
+   - These items are **strictly excluded** from the base package price. Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement the base price during booking checkout.
+3. **Descriptive Narrative Inclusions & Exclusions (`product_supplementaries`):**
+   - High-level qualitative bullet points (`INCLUDED`, `EXCLUDED`, `IMPORTANT_INFO`) rendered on PDP marketing overview tabs.
 
 #### E. Variant Types (`variant_type`) — `product_variants`
 
@@ -375,6 +389,22 @@ CREATE TABLE product_trip_pricings (
 );
 CREATE INDEX idx_pricings_search ON product_trip_pricings(trip_id, age_band, selling_price);
 
+-- Itemized pricing breakdown components (bundles included within tier selling_price: Visa, Shuttle, Tipping, etc.)
+CREATE TABLE product_pricing_components (
+    id          UUID           PRIMARY KEY DEFAULT uuid_generate_v4(),
+    pricing_id  UUID           NOT NULL REFERENCES product_trip_pricings(id) ON DELETE RESTRICT,
+    name        VARCHAR(150)   NOT NULL, -- e.g. "Schengen Visa Fee", "Airport Shuttle & Coach", "Tour Leader & Driver Tipping"
+    description TEXT,
+    amount      DECIMAL(15,2)  NOT NULL DEFAULT 0.00,
+    is_included BOOLEAN        NOT NULL DEFAULT TRUE, -- TRUE = bundled inside selling_price
+    sort_order  INT            NOT NULL DEFAULT 0,
+    created_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_component_amount CHECK (amount >= 0)
+);
+CREATE INDEX idx_pricing_components_pricing_id ON product_pricing_components(pricing_id);
+
 -- Optional add-ons (Single Supplement, Extra Baggage, Flight Upgrade, Excursion)
 -- Excluded from base price; available for elective passenger purchase
 CREATE TABLE product_addons (
@@ -603,6 +633,7 @@ CREATE TRIGGER trg_product_journeys_updated_at     BEFORE UPDATE ON product_jour
 CREATE TRIGGER trg_product_variants_updated_at     BEFORE UPDATE ON product_variants     FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_trips_updated_at        BEFORE UPDATE ON product_trips        FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_trip_pricings_updated_at BEFORE UPDATE ON product_trip_pricings FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
+CREATE TRIGGER trg_product_pricing_components_updated_at BEFORE UPDATE ON product_pricing_components FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_itineraries_updated_at  BEFORE UPDATE ON product_itineraries  FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_itinerary_items_updated_at BEFORE UPDATE ON product_itinerary_items FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_locations_updated_at    BEFORE UPDATE ON product_locations    FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
@@ -790,6 +821,7 @@ erDiagram
     products              ||--o{ product_variants          : "product_id"
     product_variants      ||--o{ product_trips             : "variant_id"
     product_trips         ||--o{ product_trip_pricings      : "trip_id"
+    product_trip_pricings ||--o{ product_pricing_components: "pricing_id"
     product_variants      ||--o{ product_addons            : "variant_id (optional extras)"
     product_variants      ||--o{ product_variant_badges    : "variant_id"
     product_badges        ||--o{ product_variant_badges    : "badge_id"
@@ -835,6 +867,15 @@ erDiagram
         decimal    selling_price
     }
 
+    product_pricing_components {
+        uuid       id          PK
+        uuid       pricing_id  FK
+        varchar    name        "Schengen Visa Fee, Airport Shuttle, Tip, etc."
+        decimal    amount      "Included amount in selling_price"
+        boolean    is_included "true"
+        int        sort_order
+    }
+
     product_addons {
         uuid       id                  PK
         uuid       variant_id          FK
@@ -873,12 +914,29 @@ erDiagram
 | `product_trip_pricings` | pricing_std_inf | trip_gwe_std_01 | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
 | `product_trip_pricings` | pricing_spr_ad | trip_gwe_spr_01 | ADULT | TRUE | 31500000.00 | 28000000.00 |
 | `product_trip_pricings` | pricing_spr_inf | trip_gwe_spr_01 | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
-| `product_trip_pricings` | pricing_sum_ad | trip_gwe_sum_01 | ADULT | TRUE | 33500000.00 | 29500000.00 |
+| `product_trip_pricings` | pricing_sum_ad | trip_gwe_sum_01 | ADULT | TRUE | 12000000.00 | 10000000.00 |
 | `product_trip_pricings` | pricing_sum_inf | trip_gwe_sum_01 | INFANT | FALSE | 8000000.00 | 6500000.00 |
 | `product_trip_pricings` | pricing_tlp_ad | trip_gwe_tlp_01 | ADULT | TRUE | 35000000.00 | 31000000.00 |
 | `product_trip_pricings` | pricing_tlp_inf | trip_gwe_tlp_01 | INFANT | FALSE (or TRUE if seat allocated) | 8500000.00 | 7000000.00 |
 | `product_trip_pricings` | pricing_eb_ad | trip_gwe_eb_01 | ADULT | TRUE | 30000000.00 | 24900000.00 |
 | `product_trip_pricings` | pricing_eb_inf | trip_gwe_eb_01 | INFANT | FALSE | 7500000.00 | 6000000.00 |
+
+#### Sample `product_pricing_components` (Itemized Breakdown for GWE Summer & Classic)
+
+> Demonstrates what each package price tier covers ($\text{selling\_price} = \text{base\_departure\_amount} + \sum \text{included\_components}$).
+
+| id | pricing_id | Target Tier & Variant | Component Name | amount (IDR) | is_included | Description / Rationale |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `comp_sum_01` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Biaya Keberangkatan & Land Tour | 9,350,000.00 | TRUE | Bundled international flight, 4-star hotels, coach & guided tours |
+| `comp_sum_02` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Schengen Visa Fee | 500,000.00 | TRUE | Official consular visa application processing fee |
+| `comp_sum_03` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Airport Shuttle & Transfer | 100,000.00 | TRUE | Dedicated airport transfer between terminal and hotel |
+| `comp_sum_04` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Tour Leader & Driver Tip | 50,000.00 | TRUE | Mandatory gratuity for tour leader and local bus driver |
+| `comp_sum_inf_01` | `pricing_sum_inf` | **GWE Summer Infant (IDR 6.5M)** | Infant Airline Ticket & Tax | 5,500,000.00 | TRUE | Lap infant international airline ticket & government airport taxes |
+| `comp_sum_inf_02` | `pricing_sum_inf` | **GWE Summer Infant (IDR 6.5M)** | Infant Travel Insurance & Admin | 1,000,000.00 | TRUE | Comprehensive medical travel insurance and administrative handling |
+| `comp_std_01` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| International Flight & Accommodation | 22,000,000.00 | TRUE | Economy return flight with Qatar Airways + 6 nights twin-share hotel |
+| `comp_std_02` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Schengen Visa Fee & Assistance | 2,500,000.00 | TRUE | Full Schengen Visa consular processing and appointment handling |
+| `comp_std_03` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Airport Shuttle & Private Coach | 2,500,000.00 | TRUE | Private luxury coach for all inter-city transfers |
+| `comp_std_04` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Tour Leader & Driver Tipping | 1,500,000.00 | TRUE | Full tour duration tipping for Indonesian Tour Leader & European driver |
 
 **Sample Add-ons (`product_addons`) under Variant `var_gwe_std_26`:**
 
@@ -1083,6 +1141,7 @@ flowchart LR
         PV["product_variants\n(Listing Card)"]
         PT["product_trips\n(Dated Departure)"]
         PP["product_trip_pricings\n(Age Bands & Quota)"]
+        PPC["product_pricing_components\n(Itemized Breakdown)"]
         ADD["product_addons\n(Optional Extras)"]
         BDG["product_badges\n(Pill Labels)"]
         PVB["product_variant_badges\n(M:N)"]
@@ -1114,6 +1173,7 @@ flowchart LR
     P   -->|"1:N"| PV
     PV  -->|"1:N"| PT
     PT  -->|"1:N"| PP
+    PP  -->|"1:N"| PPC
     PV  -->|"1:N"| ADD
     PV  -->|"1:N"| PVB
     BDG -->|"1:N"| PVB
@@ -1166,6 +1226,7 @@ flowchart LR
 | `idx_trips_variant_id`                  | `product_trips`                | `(variant_id)`                                                                                   | B-Tree                | Trip lookup by variant                              |
 | `idx_trips_search`                      | `product_trips`                | `(start_date, min_quota, max_quota)` WHERE `status = 'ACTIVE'`                                   | B-Tree partial        | Search date+total pack (quota) filter               |
 | `idx_pricings_search`                   | `product_trip_pricings`        | `(trip_id, age_band, selling_price)`                                                             | B-Tree                | Price range filter and starting price lookup        |
+| `idx_pricing_components_pricing_id`     | `product_pricing_components`   | `(pricing_id)`                                                                                   | B-Tree                | Itemized pricing component lookup by pricing tier   |
 | `idx_addons_variant_trip`               | `product_addons`               | `(variant_id, trip_id)`                                                                          | B-Tree                | Add-on lookup by variant and trip                   |
 | `uq_itinerary_variant_default`          | `product_itineraries`          | `(variant_id)` WHERE `trip_id IS NULL`                                                           | B-Tree unique partial | Enforce 1 master default itinerary per variant      |
 | `uq_itinerary_trip_override`            | `product_itineraries`          | `(trip_id)` WHERE `trip_id IS NOT NULL`                                                          | B-Tree unique partial | Enforce 1 custom override itinerary per trip        |

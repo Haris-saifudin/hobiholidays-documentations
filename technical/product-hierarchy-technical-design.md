@@ -30,7 +30,9 @@ product_badges  (Visual Marketing Badges: Best Seller, Flash Sale, Early Bird, P
 
 products  (master brand / program umbrella + Multi-Dimensional Product-level categories)
   └── product_variants  (bookable listing card + Variant-specific category tags + Badges + DEFAULT Master Itinerary)
-        └── product_trips  (concrete dated departure + OVERRIDE Itinerary + Age-Band Pricings & Inclusions)
+        └── product_trips  (concrete dated departure + OVERRIDE Itinerary)
+              └── product_trip_pricings  (Age-Band Pricings & Quota: ADULT / INFANT)
+                    └── product_pricing_components  (Bundled Inclusions Breakdown: Base Tour, Visa, Shuttle, Tip)
 ```
 
 **Real-world catalog examples from Hobiholidays Storefront:**
@@ -47,10 +49,14 @@ products [prod_gwe_01] (Grand West Europe)
 │   ├── GWE Classic All-Year [var_gwe_std_26]  (variant_type = 'STANDARD')    ← card 1: Core recurring package
 │   │     ├── Badges / Tags: 🔥 Best Seller
 │   │     ├── Default Itinerary: 7D/6N Western Europe Classic Program (Amsterdam, Paris, Swiss Alps)
-│   │     ├── Add-ons: Single Supplement (Rp 8.5M), Mount Titlis & Ice Flyer (Rp 2.4M)
+│   │     ├── Add-ons (EXCLUDED Extras): Single Supplement (Rp 8.5M), Mount Titlis & Ice Flyer (Rp 2.4M)
 │   │     └── product_trips: 05 Aug 2026 → 11 Aug 2026 (max 30 pax)
 │   │           └── All-Inclusive Pricings & Age Bands:
 │   │                 ├── ADULT: Rp 28.5M (consumes_quota = TRUE) [All-inclusive base package]
+│   │                 │     ├── International Flight & Hotel (Twin-share): Rp 22.0M
+│   │                 │     ├── Schengen Visa Fee & Assistance: Rp 2.5M
+│   │                 │     ├── Airport Shuttle & Private Coach: Rp 2.5M
+│   │                 │     └── Tour Leader & Driver Tipping: Rp 1.5M
 │   │                 └── INFANT: Rp 6.5M (consumes_quota = FALSE for lap infant, or TRUE if seat allocated)
 │   │
 │   ├── GWE Spring 2026      [var_gwe_spr_26]  (variant_type = 'SEASONAL')    ← card 2: Spring season series
@@ -70,8 +76,14 @@ products [prod_gwe_01] (Grand West Europe)
 │   │     └── product_trips: 10 Jul 2026 → 16 Jul 2026 (max 35 pax)
 │   │           ├── Itinerary: Inherits Variant Default Itinerary
 │   │           └── All-Inclusive Pricings & Age Bands:
-│   │                 ├── ADULT: Rp 29.5M (consumes_quota = TRUE)
+│   │                 ├── ADULT: Rp 10.0M (consumes_quota = TRUE) [Itemized Bundled Rate]
+│   │                 │     ├── Biaya Keberangkatan & Land Tour: Rp 9.35M
+│   │                 │     ├── Schengen Visa Fee: Rp 500K
+│   │                 │     ├── Airport Shuttle & Transfer: Rp 100K
+│   │                 │     └── Tour Leader & Driver Tipping: Rp 50K
 │   │                 └── INFANT: Rp 6.5M (consumes_quota = FALSE)
+│   │                       ├── Infant Airline Ticket & Tax: Rp 5.5M
+│   │                       └── Infant Travel Insurance & Admin: Rp 1.0M
 │   │
 │   ├── GWE Tulip Keukenhof  [var_gwe_tlp_26]  (variant_type = 'THEMED')      ← card 4: Keukenhof tulip festival
 │   │     ├── Badges / Tags: 🌷 Tulip Edition
@@ -99,6 +111,7 @@ products [prod_gwe_01] (Grand West Europe)
 | **L2** | `product_variants` | Primary storefront listing card on All Tours. Owns variant-specific category overrides/additions, default master itinerary & optional add-on configurations | `variant_type` (`STANDARD`, `SEASONAL`, `THEMED`, `PROMOTIONAL`), `listing_status` (inherits / independent status) |
 | **L3** | `product_trips` | Concrete dated departure window with quota & optional trip override itinerary | `status` (`ACTIVE`, `FULL`, `CANCELLED`, `COMPLETED`) |
 | **L3+** | `product_trip_pricings` | Price tiers per trip resolved by age band and dynamic capacity quota rules | `age_band` (`ADULT`, `INFANT`), `consumes_quota` (`BOOLEAN`) |
+| **L3++**| `product_pricing_components`| Itemized cost components included within the selling price (Visa, Shuttle, Tipping, Flights) | `name`, `amount`, `is_included` (`BOOLEAN`) |
 
 ### Variant Types & Frontend Presentation
 
@@ -145,10 +158,18 @@ Itineraries are decoupled from base products and anchored to variants:
 - **Trip Override (`trip_id IS NOT NULL`):** Individual trips may override the master itinerary for date-specific variations (e.g. holiday parades, seasonal closures).
 - **Application Fallback:** `resolved_itinerary = trip.itinerary ?? variant.itinerary`.
 
-### 7. All-Inclusive Base Pricing & Excluded Add-on Architecture
+### 7. All-Inclusive Base Pricing, Itemized Component Breakdown & Excluded Add-on Architecture
 
-- **All-Inclusive Base Package Price:** The base selling price on `product_trip_pricings` represents the complete tour package (international flights, accommodations, transport, meals, tour guide, and entrance tickets). Textual inclusions and exclusions are documented transparently via `product_supplementaries` (`INCLUDED` and `EXCLUDED`).
-- **Excluded Add-ons (`product_addons`):** Configured at Variant level (and optionally supplemented at Trip level) for elective traveler upgrades that are **excluded** from the base price (Single Supplement, Hot Air Balloon, Extra Baggage). Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement base pricing during booking checkout.
+Hobiholidays establishes clear architectural boundaries between bundled cost components, elective upgrades, and marketing copy:
+
+- **All-Inclusive Tier Selling Price (`product_trip_pricings`):** The effective bookable rate per passenger age band (e.g. `ADULT = IDR 10.000.000`).
+- **Bundled Itemized Components (`product_pricing_components`):** Explains exactly what the package tier covers besides base departure costs ($\text{selling\_price} = \text{base\_departure\_amount} + \sum \text{included\_components}$). In GWE Summer Adult (IDR 10M), this details:
+  - *Biaya Keberangkatan & Land Tour:* IDR 9.350.000
+  - *Schengen Visa Fee:* IDR 500.000 (`is_included = TRUE`)
+  - *Airport Shuttle & Transfer:* IDR 100.000 (`is_included = TRUE`)
+  - *Tour Leader & Driver Tip:* IDR 50.000 (`is_included = TRUE`)
+- **Excluded Add-ons (`product_addons`):** Configured at Variant level (and optionally supplemented at Trip level) for elective traveler upgrades that are **strictly excluded** from the base price (Single Supplement, Hot Air Balloon, Extra Baggage). Add-ons specify `applicable_age_band` (`ADULT`, `INFANT`, or `ALL`) and supplement base pricing during booking checkout.
+- **Narrative Inclusions/Exclusions (`product_supplementaries`):** High-level qualitative bullet points rendered on PDP marketing tabs.
 
 ### 8. Polymorphic Target Resolution
 
@@ -180,6 +201,7 @@ Key schema decisions specific to this hierarchy:
 | `product_variants.variant_type` classification                           | Enforced via `CHECK (variant_type IN ('STANDARD', 'SEASONAL', 'THEMED', 'PROMOTIONAL'))`                            |
 | `listing_status` lifecycle states                                        | Enforced via `CHECK (listing_status IN ('DRAFT', 'PENDING_REVIEW', 'ACTIVE', 'INACTIVE', 'ARCHIVED', 'SUSPENDED'))` |
 | `age_band` pricing tiers (`consumes_quota`)                              | Enforced via `CHECK (age_band IN ('ADULT', 'INFANT'))`                                                             |
+| `product_pricing_components` itemized breakdown                          | Bundled inclusions inside selling price (`pricing_id` FK + `amount` + `is_included = TRUE`)                         |
 | `UNIQUE(variant_id, start_date)` on `product_trips`                      | One departure per variant per calendar date                                                                         |
 | `UNIQUE(trip_id, age_band)` on `product_trip_pricings`                   | One price row per trip per age band                                                                                 |
 | `uq_itinerary_variant_default` partial index                             | Exactly 1 master itinerary per variant where `trip_id IS NULL`                                                      |
@@ -208,6 +230,7 @@ erDiagram
     product_badges               ||--o{ product_variant_badges       : "badge_id"
     product_variants             ||--o{ product_trips                : "variant_id"
     product_trips                ||--o{ product_trip_pricings        : "trip_id"
+    product_trip_pricings        ||--o{ product_pricing_components   : "pricing_id"
     product_variants             ||--o{ product_addons               : "variant_id (optional extras)"
 
     category_dimensions {
@@ -289,6 +312,15 @@ erDiagram
         decimal    selling_price
     }
 
+    product_pricing_components {
+        uuid       id          PK
+        uuid       pricing_id  FK
+        varchar    name        "Schengen Visa Fee, Airport Shuttle, Tip, etc."
+        decimal    amount      "Cost amount included in selling_price"
+        boolean    is_included "true"
+        int        sort_order
+    }
+
     product_addons {
         uuid       id                  PK
         uuid       variant_id          FK
@@ -306,15 +338,15 @@ erDiagram
 ```
 ---
 
-### ERD 2 — Full Product Domain (All 16 Domain Tables)
+### ERD 2 — Full Product Domain (All 17 Domain Tables)
 
 > [!TIP]
 > **Domain Clustering Guide:**
-> To make the 16-table architecture easy to navigate and digest, the diagram and entities below are organized into **7 functional clusters**:
+> To make the 17-table architecture easy to navigate and digest, the diagram and entities below are organized into **7 functional clusters**:
 > 1. 🏷️ **Multi-Dimensional Taxonomy:** `category_dimensions` → `product_categories` → `product_category_assignments`
 > 2. 🏛️ **Core Umbrella (Level 1):** `products` (Master) & `product_journeys` (1:1 Base Duration)
 > 3. 🗂️ **Bookable Variants (Level 2) & Badges:** `product_variants` (Listing Card) + `product_badges` & `product_variant_badges` (M:N)
-> 4. 📅 **Dated Departures (Level 3), Pricing & Addons:** `product_trips` → `product_trip_pricings` & `product_addons`
+> 4. 📅 **Dated Departures (Level 3), Pricing, Components & Addons:** `product_trips` → `product_trip_pricings` → `product_pricing_components` & `product_addons`
 > 5. 🗺️ **Itinerary & Daily Schedule:** `product_itineraries` (Variant Master / Trip Override) → `product_itinerary_items`
 > 6. 🌍 **Geography & Location Anchors:** `areas` (4-Tier Tree) → `product_locations` (Anchored to POI/Country/Sub-Continent/Continent)
 > 7. 🖼️ **Media Assets, Supplementaries & SEO:** `product_media`, `product_media_blobs`, `product_media_usages`, `product_supplementaries`, `seo_metadata`
@@ -347,6 +379,7 @@ erDiagram
     %% 4. PRICING & ADDONS RELATIONSHIPS
     %% =========================================================================
     product_trips                ||--o{ product_trip_pricings        : "trip_id (ADULT / INFANT tiers)"
+    product_trip_pricings        ||--o{ product_pricing_components   : "pricing_id (1:N bundled inclusions)"
     product_variants             ||--o{ product_addons               : "variant_id (optional extras)"
     product_trips                ||--o{ product_addons               : "trip_id (trip-specific override)"
 
@@ -464,7 +497,7 @@ erDiagram
     }
 
     %% =========================================================================
-    %% ENTITY DEFINITIONS — CLUSTER 4: DATED DEPARTURES (LEVEL 3), PRICING & ADDONS
+    %% ENTITY DEFINITIONS — CLUSTER 4: DATED DEPARTURES (LEVEL 3), PRICING, COMPONENTS & ADDONS
     %% =========================================================================
     product_trips {
         uuid      id         PK  "Primary Key (Concrete Dated Departure)"
@@ -485,6 +518,18 @@ erDiagram
         boolean   consumes_quota     "true (ADULT) | false (INFANT optionally)"
         decimal   base_price         "Original list price / strikethrough (IDR)"
         decimal   selling_price      "Effective bookable selling price (IDR)"
+        timestamp created_at         "Record creation timestamp"
+        timestamp updated_at         "Record last update timestamp"
+    }
+
+    product_pricing_components {
+        uuid      id             PK  "Primary Key"
+        uuid      pricing_id     FK  "FK -> product_trip_pricings.id"
+        varchar   name               "Component Title (e.g. Schengen Visa Fee, Tip)"
+        text      description        "Detailed inclusion explanation"
+        decimal   amount             "Component cost amount in IDR"
+        boolean   is_included        "Bundled inside selling_price (default true)"
+        int       sort_order         "Display ordering in pricing breakdown"
         timestamp created_at         "Record creation timestamp"
         timestamp updated_at         "Record last update timestamp"
     }
@@ -638,6 +683,7 @@ flowchart LR
         PV["product_variants\n(All Tours listing card)"]
         PT["product_trips\n(dated departure)"]
         PP["product_trip_pricings\n(Age Bands & Quota)"]
+        PPC["product_pricing_components\n(Itemized Breakdown)"]
         ADD["product_addons\n(Optional Extras)"]
         BDG["product_badges\n(Pill Labels)"]
         PVB["product_variant_badges\n(M:N)"]
@@ -669,6 +715,7 @@ flowchart LR
     P   -->|"1:N"| PV
     PV  -->|"1:N"| PT
     PT  -->|"1:N"| PP
+    PP  -->|"1:N"| PPC
     PV  -->|"1:N"| ADD
     PV  -->|"1:N"| PVB
     BDG -->|"1:N"| PVB
@@ -822,12 +869,27 @@ flowchart LR
 | `pricing_std_inf` | `trip_gwe_std_01` | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
 | `pricing_spr_ad` | `trip_gwe_spr_01` | ADULT | TRUE | 31500000.00 | 28000000.00 |
 | `pricing_spr_inf` | `trip_gwe_spr_01` | INFANT | FALSE (or TRUE if seat allocated) | 8000000.00 | 6500000.00 |
-| `pricing_sum_ad` | `trip_gwe_sum_01` | ADULT | TRUE | 33500000.00 | 29500000.00 |
+| `pricing_sum_ad` | `trip_gwe_sum_01` | ADULT | TRUE | 12000000.00 | 10000000.00 |
 | `pricing_sum_inf` | `trip_gwe_sum_01` | INFANT | FALSE | 8000000.00 | 6500000.00 |
 | `pricing_tlp_ad` | `trip_gwe_tlp_01` | ADULT | TRUE | 35000000.00 | 31000000.00 |
 | `pricing_tlp_inf` | `trip_gwe_tlp_01` | INFANT | FALSE (or TRUE if seat allocated) | 8500000.00 | 7000000.00 |
 | `pricing_eb_ad` | `trip_gwe_eb_01` | ADULT | TRUE | 30000000.00 | 24900000.00 |
 | `pricing_eb_inf` | `trip_gwe_eb_01` | INFANT | FALSE | 7500000.00 | 6000000.00 |
+
+### `product_pricing_components` (Itemized Bundled Inclusions)
+
+| id | pricing_id | Target Tier & Variant | Component Name | amount (IDR) | is_included | Description / Rationale |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `comp_sum_01` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Biaya Keberangkatan & Land Tour | 9,350,000.00 | TRUE | Bundled international flight, 4-star hotels, coach & guided tours |
+| `comp_sum_02` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Schengen Visa Fee | 500,000.00 | TRUE | Official consular visa application processing fee |
+| `comp_sum_03` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Airport Shuttle & Transfer | 100,000.00 | TRUE | Dedicated airport transfer between terminal and hotel |
+| `comp_sum_04` | `pricing_sum_ad` | **GWE Summer Adult (IDR 10M)** | Tour Leader & Driver Tip | 50,000.00 | TRUE | Mandatory gratuity for tour leader and local bus driver |
+| `comp_sum_inf_01` | `pricing_sum_inf` | **GWE Summer Infant (IDR 6.5M)** | Infant Airline Ticket & Tax | 5,500,000.00 | TRUE | Lap infant international airline ticket & government airport taxes |
+| `comp_sum_inf_02` | `pricing_sum_inf` | **GWE Summer Infant (IDR 6.5M)** | Infant Travel Insurance & Admin | 1,000,000.00 | TRUE | Comprehensive medical travel insurance and administrative handling |
+| `comp_std_01` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| International Flight & Accommodation | 22,000,000.00 | TRUE | Economy return flight with Qatar Airways + 6 nights twin-share hotel |
+| `comp_std_02` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Schengen Visa Fee & Assistance | 2,500,000.00 | TRUE | Full Schengen Visa consular processing and appointment handling |
+| `comp_std_03` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Airport Shuttle & Private Coach | 2,500,000.00 | TRUE | Private luxury coach for all inter-city transfers |
+| `comp_std_04` | `pricing_std_ad` | **GWE Classic Adult (IDR 28.5M)**| Tour Leader & Driver Tipping | 1,500,000.00 | TRUE | Full tour duration tipping for Indonesian Tour Leader & European driver |
 
 ### `product_addons` (Optional Extras for Variant `var_gwe_std_26`)
 
@@ -887,6 +949,7 @@ product_variants
 | `products` → `product_variants`                   | Hard FK           | 1 : N       | `ON DELETE RESTRICT`                                       |
 | `product_variants` → `product_trips`              | Hard FK           | 1 : N       | `ON DELETE RESTRICT` + `UNIQUE(variant_id, start_date)`    |
 | `product_trips` → `product_trip_pricings`         | Hard FK           | 1 : N       | `ON DELETE RESTRICT` + `UNIQUE(trip_id, age_band)`         |
+| `product_trip_pricings` → `product_pricing_components`| Hard FK       | 1 : N       | `ON DELETE RESTRICT` (Itemized bundled components)         |
 | `product_variants` → `product_addons`             | Hard FK           | 1 : N       | `ON DELETE RESTRICT` (optional extras)                     |
 | `product_variants` → `product_itineraries`        | Hard FK           | 1 : 1       | `ON DELETE RESTRICT` + `uq_itinerary_variant_default`      |
 | `product_trips` → `product_itineraries`           | Hard FK           | 1 : 1       | `ON DELETE SET NULL` + `uq_itinerary_trip_override`        |
