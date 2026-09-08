@@ -1,7 +1,7 @@
 # Product Domain - Search & Filter Architecture
 
 > **Overview**
-> Technical documentation for the Trip Search & Filter engine. This architecture maps the frontend search widget and All Tours catalog filters (Product Name, Category, Continent, Sub Continent, Country, POI / Destination, Departure Month, Total Pack / Pax, and Price Range) to the PostgreSQL data model with the **3-level product hierarchy** (`products → product_variants → product_trips`) joined with the **4-tier Area domain** (`Continent → Sub Continent → Country → POI`) and **2-tier Category taxonomy** (`parent_category → child_category`).
+> Technical documentation for the Trip Search & Filter engine. This architecture maps the frontend search widget and All Tours catalog filters (Product Name, Multi-Dimensional Categories, Continent, Sub Continent, Country, POI / Destination, Departure Month, Total Pack / Pax, and Price Range) to the PostgreSQL data model with the **3-level product hierarchy** (`products → product_variants → product_trips`) joined with the **4-tier Area domain** (`Continent → Sub Continent → Country → POI`) and **Multi-Dimensional Category Taxonomy** (`category_dimensions → product_categories → product_category_assignments`).
 >
 > _Optimized for fast reads, complex relational filtering, paginated result counts, and seamless integration with NestJS._
 
@@ -33,14 +33,19 @@ The All Tours catalog and search widget expose multiple independent and combinab
 | UI Filter Field | Parameter Name | Target Table & Column | Filter & Evaluation Logic |
 | :--- | :--- | :--- | :--- |
 | **Product / Variant Name** | `productName` | `products.name` / `product_variants.name` | Trigram / `ILIKE` partial text search matching either the parent product title (L1) or variant title (L2). |
-| **Parent Category** | `parentCategorySlug` | `parent_cat.slug` | Filter by top-level tour theme (e.g. *Travel Style*, *Special Interest*). |
-| **Child Category** | `categorySlug` | `child_cat.slug` | Filter by specific sub-category (e.g. *Cultural & Heritage*, *Family Leisure*). |
+| **Categories (Multi-Faceted)** | `categorySlugs` / `categorySlug` | `product_categories.slug` via `product_category_assignments` | Evaluates whether the Variant (L2) or its Master Product (L1) has the category assigned across any dimension (`EXISTS` query). |
+| **Travel Style Facet** | `travelStyleSlug` | `product_categories.slug` (dim: `TRAVEL_STYLE`) | Filters by operational format (e.g. *Paket Tour / Open Trip*, *Private Trip*, *Signature 5-Star*). |
+| **Theme & Interest Facet** | `themeSlug` | `product_categories.slug` (dim: `THEME_INTEREST`) | Filters by theme (e.g. *Cultural & Wonders*, *Nature & Alpine Scenery*, *Sakura & Flower Blooms*). |
+| **Season & Moment Facet** | `seasonSlug` | `product_categories.slug` (dim: `SEASON_MOMENT`) | Filters by seasonal edition or holiday peak (e.g. *Spring & Sakura*, *Autumn Leaves*, *NATARU*, *Liburan Lebaran*). |
+| **Special / Dietary Facet** | `specialSlug` | `product_categories.slug` (dim: `SPECIAL_EXPERIENCE`) | Filters by dietary/service accommodation (e.g. *Halal / Muslim Friendly*, *Family Friendly*). |
+| **Promotional Badge Filter** | `badgeCode` / `badgeCodes` | `product_badges.code` via `product_variant_badges` | Filters by promotional marketing highlight (e.g. `BEST_SELLER`, `FLASH_SALE`, `EARLY_BIRD`, `POPULER`, `BARU`). |
 | **Continent Filter** | `continentSlug` / `continentId` | `continent_area.slug` / `continent_area.id` | Dynamic upward resolution (`target_area -> country -> sub_continent -> continent`). Matches products anchored at Continent, Sub-Continent, Country, or POI. |
 | **Sub Continent Filter** | `subContinentSlug` / `subContinentId` | `subcont_area.slug` / `subcont_area.id` | Dynamic upward resolution (`target_area -> country -> sub_continent`). Matches products anchored at Sub-Continent, Country, or POI. |
 | **Country Filter** | `countrySlug` / `countryId` | `country_area.slug` / `country_area.id` | Dynamic upward resolution (`target_area -> country`). Matches products anchored at Country or POI. |
 | **POI / Attraction** | `poiSlug` / `poiId` | `target_area.slug` / `target_area.id` | Filter by Point of Interest landmark (where `target_area.area_type_id = 4`, e.g. *Keukenhof*, *Eiffel Tower*). |
 | **"Where To?" Destination** | `destination` | `continent_area.name`, `country_area.name`, `pl.area_name`, `products.slug` | Broad partial search across continental, country, POI destination names, and product slugs. |
 | **Departure Month** | `departureMonth` | `product_trips.start_date` | Date range query extracting all trips starting within the given month (`YYYY-MM`). |
+| **Duration Bracket** | `durationBracket` | `COALESCE(pv.duration_days, pj.duration_days)` | Quick duration checkbox filter: `SHORT` (5–7 Hari), `MEDIUM` (8–12 Hari), `LONG` (13+ Hari). |
 | **Total Pack / Pax** | `totalPack` (or `pax`) | `product_trips.min_quota` & `product_trips.max_quota` | Verifies the trip capacity can accommodate the party size (`pt.max_quota >= :totalPack AND pt.min_quota <= :totalPack`). |
 | **Min Price** | `minPrice` | `product_trip_pricings.selling_price` | Trip selling price for `ADULT` satisfies `>= :minPrice`. |
 | **Max Price** | `maxPrice` | `product_trip_pricings.selling_price` | Trip selling price for `ADULT` satisfies `<= :maxPrice`. |
@@ -61,25 +66,51 @@ The frontend sends a `GET /api/v1/variants/search` request with query parameters
 
 ```typescript
 // search-trip.dto.ts
-import { IsOptional, IsString, IsInt, IsNumber, Min, IsIn } from 'class-validator';
+import { IsOptional, IsString, IsInt, IsNumber, Min, IsIn, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class SearchTripDto {
   @IsOptional()
   @IsString()
-  productName?: string; // Search by tour name (e.g., "Grand West Europe", "Tulip")
+  productName?: string; // Search by tour name (e.g., "Grand Europe", "Japan Sakura", "Switzerland")
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categorySlugs?: string[]; // Multi-category slugs across any dimension
 
   @IsOptional()
   @IsString()
-  parentCategorySlug?: string; // Filter by Parent Category slug (e.g., "travel-style")
+  categorySlug?: string; // Backward-compatible single category filter
 
   @IsOptional()
   @IsString()
-  categorySlug?: string; // Filter by Child Category slug (e.g., "cultural-heritage")
+  travelStyleSlug?: string; // Filter by Travel Style dimension (e.g., "open-group-tour", "signature-5star-tour")
 
   @IsOptional()
   @IsString()
-  continentSlug?: string; // 4-tier: Continent slug (e.g., "europe", "asia")
+  themeSlug?: string; // Filter by Theme dimension (e.g., "cultural-wonders", "sakura-flower-blooms")
+
+  @IsOptional()
+  @IsString()
+  seasonSlug?: string; // Filter by Season & Moment dimension (e.g., "spring-sakura-season", "nataru-year-end")
+
+  @IsOptional()
+  @IsString()
+  specialSlug?: string; // Filter by Special / Dietary dimension (e.g., "halal-muslim-friendly")
+
+  @IsOptional()
+  @IsString()
+  badgeCode?: string; // Filter by promotional badge (e.g., "BEST_SELLER", "FLASH_SALE", "EARLY_BIRD")
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  badgeCodes?: string[]; // Filter by multiple promotional badges
+
+  @IsOptional()
+  @IsString()
+  continentSlug?: string; // 4-tier: Continent slug (e.g., "europe", "asia", "america", "africa", "oceania")
 
   @IsOptional()
   @IsString()
@@ -95,7 +126,7 @@ export class SearchTripDto {
 
   @IsOptional()
   @IsString()
-  countrySlug?: string; // 4-tier: Country slug (e.g., "netherlands", "switzerland", "france")
+  countrySlug?: string; // 4-tier: Country slug (e.g., "switzerland", "france", "japan", "korea", "turkey")
 
   @IsOptional()
   @IsString()
@@ -103,7 +134,7 @@ export class SearchTripDto {
 
   @IsOptional()
   @IsString()
-  poiSlug?: string; // 4-tier: POI landmark slug (e.g., "keukenhof-gardens")
+  poiSlug?: string; // 4-tier: POI landmark slug (e.g., "mt-titlis", "keukenhof-gardens", "eiffel-tower")
 
   @IsOptional()
   @IsString()
@@ -116,6 +147,11 @@ export class SearchTripDto {
   @IsOptional()
   @IsString()
   departureMonth?: string; // Format: "YYYY-MM" (e.g., "2026-10")
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['SHORT', 'MEDIUM', 'LONG'])
+  durationBracket?: 'SHORT' | 'MEDIUM' | 'LONG'; // 'SHORT': 5-7D, 'MEDIUM': 8-12D, 'LONG': 13+D
 
   @IsOptional()
   @Type(() => Number)
@@ -171,6 +207,25 @@ export interface DestinationHierarchyDto {
   poi?: string | null;            // Null when anchored to CONTINENT, SUB_CONTINENT, or COUNTRY
 }
 
+export interface TaxonomyCategoryDto {
+  id: string;
+  name: string;
+  slug: string;
+  dimensionCode: 'TRAVEL_STYLE' | 'THEME_INTEREST' | 'SEASON_MOMENT' | 'SPECIAL_EXPERIENCE';
+  dimensionName: string;
+  isPrimary: boolean;
+}
+
+export interface ProductBadgeDto {
+  id: string;
+  code: string;                  // e.g. "BEST_SELLER", "FLASH_SALE", "EARLY_BIRD", "POPULER"
+  label: string;                 // e.g. "🔥 Best Seller", "⚡ Flash Sale", "⭐ Premium"
+  backgroundColor: string;       // Hex code (e.g., "#EF4444")
+  textColor: string;             // Hex code (e.g., "#FFFFFF")
+  iconUrl?: string | null;
+  sortOrder: number;
+}
+
 export interface VariantCardDto {
   variantId: string;
   variantName: string;
@@ -181,10 +236,12 @@ export interface VariantCardDto {
   productSlug: string;
   durationDays: number;
   durationNights: number;
+  badges: ProductBadgeDto[];          // Visual promotional ribbons/pills (Variant L2 specific)
+  categories: TaxonomyCategoryDto[];  // Multi-dimensional taxonomy categories (Product L1 inherited + Variant L2 specific)
   destinations: DestinationHierarchyDto[];
-  availableDates: string[]; // ISO Date strings: "YYYY-MM-DD"
-  startingPrice: number;    // Min selling_price across matching trips
-  currency: string;         // "IDR"
+  availableDates: string[];           // ISO Date strings: "YYYY-MM-DD"
+  startingPrice: number;              // Min selling_price across matching trips
+  currency: string;                   // "IDR"
 }
 
 export interface SearchTripResponseDto {
@@ -206,11 +263,12 @@ export interface SearchTripResponseDto {
 
 To eliminate the N+1 query penalty, the search query joins `product_variants` (the primary listing unit) with:
 1. `products` (parent product status check, duration fallback, and product name search)
-2. `product_categories` (Parent & Child taxonomy filters)
-3. `product_journeys` (default duration)
-4. `product_locations` & the 4-tier `areas` hierarchy (POI → Country → Sub Continent → Continent)
-5. `product_trips` (date range and total pack / quota filter)
-6. `product_trip_pricings` (ADULT selling price budget filter and starting price calculation)
+2. `product_variant_badges` & `product_badges` (visual promotional card ribbons/pills)
+3. `product_category_assignments` (multi-dimensional category taxonomy resolution and filtering)
+4. `product_journeys` (default duration)
+5. `product_locations` & the 4-tier `areas` hierarchy (POI → Country → Sub Continent → Continent)
+6. `product_trips` (date range and total pack / quota filter)
+7. `product_trip_pricings` (ADULT selling price budget filter and starting price calculation)
 
 ### Comprehensive Parameterized SQL Query
 
@@ -223,10 +281,38 @@ SELECT
     p.id                                            AS product_id,
     p.name                                          AS product_name,
     p.slug                                          AS product_slug,
-    parent_cat.name                                 AS parent_category_name,
-    child_cat.name                                  AS category_name,
     COALESCE(pv.duration_days, pj.duration_days)    AS duration_days,
     COALESCE(pv.duration_nights, pj.duration_nights)AS duration_nights,
+    -- Aggregated promotional badges (Variant L2 specific visual ribbons)
+    (
+        SELECT COALESCE(json_agg(jsonb_build_object(
+            'id', pb.id,
+            'code', pb.code,
+            'label', pb.label,
+            'backgroundColor', pb.background_color,
+            'textColor', pb.text_color,
+            'iconUrl', pb.icon_url,
+            'sortOrder', pb.sort_order
+        ) ORDER BY pvb.sort_order ASC, pb.sort_order ASC), '[]'::json)
+        FROM product_variant_badges pvb
+        JOIN product_badges pb ON pb.id = pvb.badge_id
+        WHERE pvb.variant_id = pv.id
+    )                                               AS badges,
+    -- Aggregated multi-dimensional categories (Product L1 inherited + Variant L2 specific)
+    (
+        SELECT COALESCE(json_agg(jsonb_build_object(
+            'id', c.id,
+            'name', c.name,
+            'slug', c.slug,
+            'dimensionCode', cd.code,
+            'dimensionName', cd.name,
+            'isPrimary', pca.is_primary
+        ) ORDER BY cd.sort_order ASC, pca.is_primary DESC, c.sort_order ASC), '[]'::json)
+        FROM product_category_assignments pca
+        JOIN product_categories c ON c.id = pca.category_id
+        JOIN category_dimensions cd ON cd.id = c.dimension_id
+        WHERE pca.product_id = p.id AND (pca.variant_id IS NULL OR pca.variant_id = pv.id)
+    )                                               AS categories,
     -- Aggregated flat destinations with dynamic upward resolution & nullable leaves
     json_agg(DISTINCT jsonb_build_object(
         'continent', continent_area.name,
@@ -238,10 +324,8 @@ SELECT
     MIN(ptp.selling_price)                          AS starting_price,
     COUNT(*) OVER()                                 AS total_packages
 FROM product_variants pv
--- 1. Join Parent Product & Categories
+-- 1. Join Parent Product
 INNER JOIN products p ON p.id = pv.product_id
-LEFT JOIN product_categories child_cat ON child_cat.id = p.category_id
-LEFT JOIN product_categories parent_cat ON parent_cat.id = COALESCE(p.parent_category_id, child_cat.parent_id)
 -- 2. Join Journey Metadata for duration fallback
 LEFT JOIN product_journeys pj ON pj.product_id = p.id
 -- 3. Join Locations and Dynamic Upward Area Hierarchy (Anchored to POI, Country, Sub Continent, or Continent)
@@ -283,14 +367,94 @@ WHERE
         OR pv.name ILIKE '%' || :productName || '%'
     )
 
-    -- [Filter 2: Category Filters] (optional)
+    -- [Filter 2: Multi-Dimensional Category Filters] (optional)
     AND (
-        :parentCategorySlug IS NULL
-        OR parent_cat.slug = :parentCategorySlug
+        :categorySlugs::text[] IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_category_assignments pca_f
+            JOIN product_categories c_f ON c_f.id = pca_f.category_id
+            WHERE pca_f.product_id = p.id
+              AND (pca_f.variant_id IS NULL OR pca_f.variant_id = pv.id)
+              AND c_f.slug = ANY(:categorySlugs::text[])
+        )
     )
     AND (
         :categorySlug IS NULL
-        OR child_cat.slug = :categorySlug
+        OR EXISTS (
+            SELECT 1 FROM product_category_assignments pca_f
+            JOIN product_categories c_f ON c_f.id = pca_f.category_id
+            WHERE pca_f.product_id = p.id
+              AND (pca_f.variant_id IS NULL OR pca_f.variant_id = pv.id)
+              AND c_f.slug = :categorySlug
+        )
+    )
+    AND (
+        :travelStyleSlug IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_category_assignments pca_f
+            JOIN product_categories c_f ON c_f.id = pca_f.category_id
+            JOIN category_dimensions cd_f ON cd_f.id = c_f.dimension_id
+            WHERE pca_f.product_id = p.id
+              AND (pca_f.variant_id IS NULL OR pca_f.variant_id = pv.id)
+              AND cd_f.code = 'TRAVEL_STYLE'
+              AND c_f.slug = :travelStyleSlug
+        )
+    )
+    AND (
+        :themeSlug IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_category_assignments pca_f
+            JOIN product_categories c_f ON c_f.id = pca_f.category_id
+            JOIN category_dimensions cd_f ON cd_f.id = c_f.dimension_id
+            WHERE pca_f.product_id = p.id
+              AND (pca_f.variant_id IS NULL OR pca_f.variant_id = pv.id)
+              AND cd_f.code = 'THEME_INTEREST'
+              AND c_f.slug = :themeSlug
+        )
+    )
+    AND (
+        :seasonSlug IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_category_assignments pca_f
+            JOIN product_categories c_f ON c_f.id = pca_f.category_id
+            JOIN category_dimensions cd_f ON cd_f.id = c_f.dimension_id
+            WHERE pca_f.product_id = p.id
+              AND (pca_f.variant_id IS NULL OR pca_f.variant_id = pv.id)
+              AND cd_f.code = 'SEASON_MOMENT'
+              AND c_f.slug = :seasonSlug
+        )
+    )
+    AND (
+        :specialSlug IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_category_assignments pca_f
+            JOIN product_categories c_f ON c_f.id = pca_f.category_id
+            JOIN category_dimensions cd_f ON cd_f.id = c_f.dimension_id
+            WHERE pca_f.product_id = p.id
+              AND (pca_f.variant_id IS NULL OR pca_f.variant_id = pv.id)
+              AND cd_f.code = 'SPECIAL_EXPERIENCE'
+              AND c_f.slug = :specialSlug
+        )
+    )
+
+    -- [Filter 2e: Promotional Badge Filters] (optional)
+    AND (
+        :badgeCode IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_variant_badges pvb_f
+            JOIN product_badges pb_f ON pb_f.id = pvb_f.badge_id
+            WHERE pvb_f.variant_id = pv.id
+              AND pb_f.code = :badgeCode
+        )
+    )
+    AND (
+        :badgeCodes::text[] IS NULL
+        OR EXISTS (
+            SELECT 1 FROM product_variant_badges pvb_f
+            JOIN product_badges pb_f ON pb_f.id = pvb_f.badge_id
+            WHERE pvb_f.variant_id = pv.id
+              AND pb_f.code = ANY(:badgeCodes::text[])
+        )
     )
 
     -- [Filter 3: Continent Filter] (optional)
@@ -349,13 +513,21 @@ WHERE
         OR (pt.start_date >= :departureMonthStart AND pt.start_date < :departureMonthEnd)
     )
 
-    -- [Filter 9: Total Pack / Pax Quota] (optional, party size)
+    -- [Filter 9: Duration Bracket] (optional: 'SHORT' 5-7D, 'MEDIUM' 8-12D, 'LONG' 13+D)
+    AND (
+        :durationBracket IS NULL
+        OR (:durationBracket = 'SHORT'  AND COALESCE(pv.duration_days, pj.duration_days) BETWEEN 5 AND 7)
+        OR (:durationBracket = 'MEDIUM' AND COALESCE(pv.duration_days, pj.duration_days) BETWEEN 8 AND 12)
+        OR (:durationBracket = 'LONG'   AND COALESCE(pv.duration_days, pj.duration_days) >= 13)
+    )
+
+    -- [Filter 10: Total Pack / Pax Quota] (optional, party size)
     AND (
         :totalPack IS NULL
         OR (pt.max_quota >= :totalPack AND pt.min_quota <= :totalPack)
     )
 
-    -- [Filter 10: Adult Price Range] (optional, budget range)
+    -- [Filter 11: Adult Price Range] (optional, budget range)
     AND (
         :minPrice IS NULL
         OR ptp.selling_price >= :minPrice
@@ -365,7 +537,7 @@ WHERE
         OR ptp.selling_price <= :maxPrice
     )
 
-    -- [Filter 8: Variant Classification Type] (optional)
+    -- [Filter 12: Variant Classification Type] (optional)
     AND (
         :variantType IS NULL
         OR pv.variant_type = :variantType
@@ -448,6 +620,35 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
       "productSlug": "grand-west-europe",
       "durationDays": 11,
       "durationNights": 9,
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440090",
+          "code": "BEST_SELLER",
+          "label": "🔥 Best Seller",
+          "backgroundColor": "#EF4444",
+          "textColor": "#FFFFFF",
+          "iconUrl": null,
+          "sortOrder": 10
+        }
+      ],
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440080",
+          "name": "Paket Tour / Open Trip",
+          "slug": "paket-tour-open-trip",
+          "dimensionCode": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "isPrimary": true
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440084",
+          "name": "Spring & Sakura Season",
+          "slug": "spring-sakura-season",
+          "dimensionCode": "SEASON_MOMENT",
+          "dimensionName": "Season & Moment",
+          "isPrimary": true
+        }
+      ],
       "destinations": [
         {
           "continent": "Europe",
@@ -479,6 +680,35 @@ HAVING MIN(ptp.selling_price) <= 35000000.00;
       "productSlug": "grand-west-europe",
       "durationDays": 9,
       "durationNights": 7,
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440091",
+          "code": "FLASH_SALE",
+          "label": "⚡ Flash Sale",
+          "backgroundColor": "#F59E0B",
+          "textColor": "#000000",
+          "iconUrl": null,
+          "sortOrder": 20
+        }
+      ],
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440080",
+          "name": "Paket Tour / Open Trip",
+          "slug": "paket-tour-open-trip",
+          "dimensionCode": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "isPrimary": true
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440082",
+          "name": "Sakura & Flower Blooms",
+          "slug": "sakura-flower-blooms",
+          "dimensionCode": "THEME_INTEREST",
+          "dimensionName": "Theme & Interest",
+          "isPrimary": true
+        }
+      ],
       "destinations": [
         {
           "continent": "Europe",
@@ -545,6 +775,35 @@ WHERE
       "productSlug": "japan-highlights",
       "durationDays": 7,
       "durationNights": 6,
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440093",
+          "code": "POPULER",
+          "label": "⭐ Populer",
+          "backgroundColor": "#3B82F6",
+          "textColor": "#FFFFFF",
+          "iconUrl": null,
+          "sortOrder": 30
+        }
+      ],
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440080",
+          "name": "Paket Tour / Open Trip",
+          "slug": "paket-tour-open-trip",
+          "dimensionCode": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "isPrimary": true
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440085",
+          "name": "Autumn Leaves & Foliage",
+          "slug": "autumn-leaves-foliage",
+          "dimensionCode": "SEASON_MOMENT",
+          "dimensionName": "Season & Moment",
+          "isPrimary": true
+        }
+      ],
       "destinations": [
         {
           "continent": "Asia",
@@ -613,6 +872,35 @@ WHERE
       "productSlug": "grand-west-europe",
       "durationDays": 9,
       "durationNights": 7,
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440091",
+          "code": "FLASH_SALE",
+          "label": "⚡ Flash Sale",
+          "backgroundColor": "#F59E0B",
+          "textColor": "#000000",
+          "iconUrl": null,
+          "sortOrder": 20
+        }
+      ],
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440080",
+          "name": "Paket Tour / Open Trip",
+          "slug": "paket-tour-open-trip",
+          "dimensionCode": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "isPrimary": true
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440082",
+          "name": "Sakura & Flower Blooms",
+          "slug": "sakura-flower-blooms",
+          "dimensionCode": "THEME_INTEREST",
+          "dimensionName": "Theme & Interest",
+          "isPrimary": true
+        }
+      ],
       "destinations": [
         {
           "continent": "Europe",
@@ -664,6 +952,17 @@ Host: api.hobiholidays.com
       "productSlug": "japan-highlights-tour",
       "durationDays": 7,
       "durationNights": 6,
+      "badges": [],
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440080",
+          "name": "Paket Tour / Open Trip",
+          "slug": "paket-tour-open-trip",
+          "dimensionCode": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "isPrimary": true
+        }
+      ],
       "destinations": [
         {
           "continent": "Asia",
@@ -688,6 +987,35 @@ Host: api.hobiholidays.com
       "productSlug": "scandinavia-nordics",
       "durationDays": 10,
       "durationNights": 8,
+      "badges": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440094",
+          "code": "PREMIUM",
+          "label": "⭐ Premium",
+          "backgroundColor": "#8B5CF6",
+          "textColor": "#FFFFFF",
+          "iconUrl": null,
+          "sortOrder": 40
+        }
+      ],
+      "categories": [
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440080",
+          "name": "Paket Tour / Open Trip",
+          "slug": "paket-tour-open-trip",
+          "dimensionCode": "TRAVEL_STYLE",
+          "dimensionName": "Travel Style",
+          "isPrimary": true
+        },
+        {
+          "id": "550e8400-e29b-41d4-a716-446655440083",
+          "name": "Nature & Alpine Scenery",
+          "slug": "nature-alpine-scenery",
+          "dimensionCode": "THEME_INTEREST",
+          "dimensionName": "Theme & Interest",
+          "isPrimary": true
+        }
+      ],
       "destinations": [
         {
           "continent": "Europe",
@@ -728,21 +1056,33 @@ CREATE INDEX idx_variants_slug_trgm ON product_variants USING GIN (slug gin_trgm
 CREATE INDEX idx_locations_area_name_trgm ON product_locations USING GIN (area_name gin_trgm_ops);
 ```
 
-### 2. Area Hierarchy & Join Indexes (B-Tree)
-Accelerates the join from `product_locations` up through `areas` (POI → Country → Sub Continent → Continent):
+### 2. Category Taxonomy, Promotional Badges & Area Hierarchy Join Indexes (B-Tree)
+Accelerates category facet resolution, promotional badge lookups, and the join from `product_locations` up through `areas` (POI → Country → Sub Continent → Continent):
 
 ```sql
--- Category traversal
-CREATE INDEX idx_products_category_id ON products(category_id);
-CREATE INDEX idx_categories_parent_id ON product_categories(parent_id);
+-- Multi-Dimensional Category Indexes
+CREATE INDEX idx_dimensions_code        ON category_dimensions(code);
+CREATE INDEX idx_categories_dimension_id ON product_categories(dimension_id);
+CREATE INDEX idx_categories_parent_id    ON product_categories(parent_id);
+CREATE INDEX idx_categories_slug         ON product_categories(slug);
+CREATE INDEX idx_cat_assign_product_id   ON product_category_assignments(product_id);
+CREATE INDEX idx_cat_assign_variant_id   ON product_category_assignments(variant_id);
+CREATE INDEX idx_cat_assign_category_id  ON product_category_assignments(category_id);
+CREATE INDEX idx_cat_assign_lookup       ON product_category_assignments(category_id, product_id, variant_id);
+
+-- Promotional Badges Indexes
+CREATE INDEX idx_badges_code             ON product_badges(code);
+CREATE INDEX idx_var_badges_variant_id   ON product_variant_badges(variant_id);
+CREATE INDEX idx_var_badges_badge_id     ON product_variant_badges(badge_id);
+CREATE INDEX idx_var_badges_lookup       ON product_variant_badges(badge_id, variant_id);
 
 -- Join product_locations to areas
-CREATE INDEX idx_locations_area_id ON product_locations(area_id);
-CREATE INDEX idx_locations_product_id ON product_locations(product_id);
+CREATE INDEX idx_locations_area_id       ON product_locations(area_id);
+CREATE INDEX idx_locations_product_id    ON product_locations(product_id);
 
 -- Area hierarchy traversal (POI -> Country -> Sub Continent -> Continent)
-CREATE INDEX idx_areas_parent_id ON areas(parent_id);
-CREATE INDEX idx_areas_type_slug ON areas(area_type_id, slug);
+CREATE INDEX idx_areas_parent_id         ON areas(parent_id);
+CREATE INDEX idx_areas_type_slug         ON areas(area_type_id, slug);
 ```
 
 ### 3. Date, Quota, & Pricing Search Indexes (B-Tree Composite & Partial)
@@ -768,23 +1108,23 @@ sequenceDiagram
     participant API as NestJS Gateway
     participant DB as PostgreSQL
 
-    User->>WebUI: Enters "Europe", IDR 25M-35M, "2 Pack", Month: "Oct 2026"
-    WebUI->>API: GET /api/v1/variants/search?continentSlug=europe&minPrice=25000000&maxPrice=35000000&totalPack=2&departureMonth=2026-10
+    User->>WebUI: Enters "Europe", IDR 25M-35M, "2 Pack", Month: "Oct 2026", Theme: "Cultural"
+    WebUI->>API: GET /api/v1/variants/search?continentSlug=europe&minPrice=25000000&maxPrice=35000000&totalPack=2&departureMonth=2026-10&categorySlugs[]=cultural-heritage
 
     activate API
     API->>API: Validate Query via SearchTripDto (class-validator)
-    API->>DB: Execute joined query (Variants + Products + Categories + Locations + Areas + Trips + Pricings)
+    API->>DB: Execute joined query (Variants + Products + Badges + Multi-Dimensional Categories + Locations + Areas + Trips + Pricings)
 
     activate DB
-    Note over DB: 1. Traverse areas (POI -> Country -> Sub Continent -> Continent) & Categories<br/>2. Filter trips by date range and totalPack quota<br/>3. Filter pricings by budget [minPrice..maxPrice] for ADULT<br/>4. Calculate COUNT(*) OVER() for total_packages
+    Note over DB: 1. Traverse areas, promotional badges & evaluate multi-dimensional category assignments (L1 + L2)<br/>2. Filter trips by date range and totalPack quota<br/>3. Filter pricings by budget [minPrice..maxPrice] for ADULT<br/>4. Calculate COUNT(*) OVER() for total_packages
     DB-->>API: Return Aggregated Variant Rows + total_packages
     deactivate DB
 
-    API->>API: Map into SearchTripResponseDto
+    API->>API: Map into SearchTripResponseDto (with badges, categories & destination badges)
     API-->>WebUI: 200 OK (meta: { totalPackages: 2, ... }, data: [Variant Cards])
     deactivate API
 
-    WebUI-->>User: Render "Found 2 Tour Packages" with Price & Destination Badges
+    WebUI-->>User: Render "Found 2 Tour Packages" with Price, Promotional Badges & Category/Destination Chips
 ```
 
 ---
@@ -796,7 +1136,9 @@ To avoid rendering empty filter options (e.g., countries or categories with zero
 ### 1. Active-Only Aggregation Principles
 - **No Zero-Result Traps:** Areas, categories, and departure months are only returned if they have active tour packages (`products.listing_status = 'ACTIVE'`, `product_variants.listing_status = 'ACTIVE'`, and `product_trips.status = 'ACTIVE' AND start_date >= CURRENT_DATE`).
 - **4-Tier Geographic Roll-Up:** If a tour is tagged with a POI (e.g., *Keukenhof*), its parent Country (*Netherlands*) and ancestor Continent (*Europe*) automatically roll up the active package count.
-- **Single HTTP Request:** Rather than requiring the client to issue separate API calls for categories, continents, departure calendars, and budget constraints, the endpoint consolidates all dimensions into a unified payload.
+- **Multi-Dimensional Facet Roll-Up:** Categories are aggregated by the 4 core taxonomy dimensions (`TRAVEL_STYLE`, `THEME_INTEREST`, `SEASON_MOMENT`, `SPECIAL_EXPERIENCE`) with accurate counts of active matching variant packages.
+- **Promotional Badges Roll-Up:** Promotional badges (`BEST_SELLER`, `FLASH_SALE`, `EARLY_BIRD`, `POPULER`, `BARU`) are aggregated with active variant counts for quick promotional filter toggles.
+- **Single HTTP Request:** Rather than requiring the client to issue separate API calls for categories, badges, continents, departure calendars, and budget constraints, the endpoint consolidates all dimensions into a unified payload.
 
 ### 2. Multi-Tier Caching Topology
 
@@ -838,11 +1180,11 @@ sequenceDiagram
         alt Redis Cache Hit (< 15ms)
             Redis-->>API: Return Cached JSON Payload
         else Redis Cache Miss
-            API->>DB: Execute Parallel Aggregation Queries (CTE Rollup, Price Range, Departure Months)
+            API->>DB: Execute Parallel Aggregation Queries (CTE Rollup, Price Range, Departure Months, Multi-Dimension Categories)
             activate DB
             DB-->>API: Return Aggregated Raw Rows
             deactivate DB
-            API->>API: Assemble 4-Tier Geography & 2-Tier Category Trees in Memory
+            API->>API: Assemble 4-Tier Geography & Multi-Dimensional Category Facet Trees in Memory
             API->>Redis: SET search_filter_options_v1 (EX: 3600)
         end
         

@@ -105,12 +105,23 @@ stateDiagram-v2
     ARCHIVED --> [*]
 ```
 
-#### B. Product Category Taxonomy (`product_categories`)
+#### B. Multi-Dimensional Product Category Taxonomy (`category_dimensions`, `product_categories`, `product_category_assignments`)
 
-Establishes a 2-tier parent and child classification taxonomy for catalog grouping, storefront filtering, and thematic discovery:
+Establishes a **modular, multi-dimensional taxonomy architecture** for structured tour classification, multi-faceted filtering, and SEO breadcrumb navigation. Categories answer: *"What type of trip is this?"* Products and variants are classified across 4 orthogonal dimensions simultaneously:
 
-- **Parent Category (`parent_id IS NULL`):** Broad tour category or travel style (e.g., *Travel Style*, *Special Interest*, *Religious & Halal*, *Seasonal Escapes*).
-- **Child Category (`parent_id IS NOT NULL`):** Specific sub-theme or operational package group (e.g., *Cultural & Heritage*, *Family Friendly*, *Adventure & Hiking*, *Honeymoon & Romantic*).
+- **1. Taxonomy Dimensions (`category_dimensions`):**
+  - **`TRAVEL_STYLE` (Format Operasional):** Operational tour format (*Paket Tour / Open Group Tour*, *Private Trip*, *Corporate & MICE*, *Signature / 5-Star Luxury*).
+  - **`THEME_INTEREST` (Tema Wisata & Minat):** Core tour themes (*Cultural & Wonders*, *Nature & Alpine Scenery*, *Sakura & Flower Blooms*, *City Highlights & Shopping*, *Safari & Wildlife*).
+  - **`SEASON_MOMENT` (Musim & Momen Liburan Peak):** Combines natural travel seasons (*Spring & Sakura Blossom*, *Summer Holiday*, *Autumn Leaves & Foliage*, *Winter Snow & Glacier*) and major Indonesian holiday peak windows (*NATARU / Year-End*, *Liburan Lebaran / Eid*, *Liburan Sekolah*).
+  - **`SPECIAL_EXPERIENCE` (Preferensi Layanan & Dietary):** Dietary & demographic accommodations (*Halal Friendly / Muslim Tour*, *Family Friendly*, *Senior & Leisure Friendly*).
+
+- **2. Hierarchical Categories (`product_categories`):**
+  - Concrete category nodes linked to a dimension (`dimension_id`) with optional parent-child nesting (`parent_id`) within that dimension.
+
+- **3. Modular Scoped Assignment (`product_category_assignments`):**
+  - **Product-Level (`variant_id IS NULL`):** Global categories assigned to the master product umbrella (L1) are automatically inherited by all child variants (e.g. `Cultural & Wonders`, `Halal Friendly`, `Paket Tour / Open Group Tour`).
+  - **Variant-Level (`variant_id IS NOT NULL`):** Variant-specific category tags (e.g. *Japan Sakura 7D* variant gets `Spring & Sakura Season` and `Sakura & Flower Blooms`, *Korea Autumn 6D* variant gets `Autumn Leaves & Foliage`, *Grand Europe Nataru* variant gets `NATARU / Year-End`).
+  - **Primary Category per Dimension (`is_primary = TRUE`):** Flags the primary category per dimension for PDP breadcrumbs, meta tags, and category chip highlights.
 
 #### C. Age Band Types & Quota Allocation (`age_band`) — `product_trip_pricings`
 
@@ -151,6 +162,18 @@ Categorizes bookable cards surfaced on the **All Tours** storefront. In Hobiholi
 - **`CANCELLED`:** Departure cancelled (minimum quota unmet or force majeure).
 - **`COMPLETED`:** Tour concluded successfully.
 
+#### H. Promotional Badges Subsystem (`product_badges` & `product_variant_badges`) vs Category Taxonomy
+
+To keep the platform clean and prevent data duplication between structural taxonomy and marketing overlays:
+
+| Dimension / Aspect | Category Taxonomy (`product_categories`) | Promotional Badges (`product_badges`) |
+| :--- | :--- | :--- |
+| **Core Question** | *"What is this tour package?"* | *"What promotional/editorial hook highlights this card?"* |
+| **Primary Role** | Structured taxonomy, multi-faceted sidebar filters, breadcrumbs, and Schema.org SEO. | Visual UI ribbon/pill rendered on the top of variant card media and PDP hero. |
+| **Key Examples** | `Cultural & Wonders`, `Halal Friendly`, `Spring & Sakura Season`, `Open Group Tour`. | `🔥 Best Seller`, `⚡ Flash Sale`, `⭐ Premium`, `🆕 Baru`, `⚡ Early Bird`. |
+| **Visual Customization** | Icon URL, slug, sort order. | Custom `background_color` (hex), `text_color` (hex), `icon_url`, and `sort_order`. |
+| **Cardinality** | M:N to `products` (L1) and `product_variants` (L2) with `is_primary`. | M:N to `product_variants` via `product_variant_badges`. |
+
 ---
 
 ## 🛠️ PostgreSQL DDL Schema
@@ -166,32 +189,47 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm"; -- Required for GIN text search indexe
 
 
 -- =========================================================================
--- 1. TAXONOMY & CORE — L1: product_categories, products & product_journeys
+-- 1. TAXONOMY & CORE — L1: category_dimensions, product_categories, products & product_journeys
 -- =========================================================================
 
--- Product category taxonomy (Parent & Child 2-tier tree)
-CREATE TABLE product_categories (
-    id          UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    parent_id   UUID         REFERENCES product_categories(id) ON DELETE RESTRICT,
-    name        VARCHAR(100) NOT NULL,                    -- e.g. "Travel Style", "Cultural & Heritage"
-    slug        VARCHAR(120) UNIQUE NOT NULL,             -- e.g. "travel-style", "cultural-heritage"
-    icon_url    VARCHAR(500),
-    description TEXT,
-    sort_order  INT          NOT NULL DEFAULT 0,
-    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-- Category Dimensions (Taxonomy facets: Travel Style, Theme, Season, Special Experience)
+CREATE TABLE category_dimensions (
+    id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code            VARCHAR(50)  UNIQUE NOT NULL, -- e.g. 'TRAVEL_STYLE', 'THEME_INTEREST', 'SEASON_MOMENT', 'SPECIAL_EXPERIENCE'
+    name            VARCHAR(100) NOT NULL,        -- e.g. 'Travel Style', 'Theme & Interest', 'Season & Moment', 'Special Experience / Dietary'
+    description     TEXT,
+    is_multi_select BOOLEAN      NOT NULL DEFAULT TRUE, -- UI filter hint (single-select vs multi-select facet)
+    sort_order      INT          NOT NULL DEFAULT 0,
+    is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_dimensions_code ON category_dimensions(code);
 
+-- Product category nodes (Supports multi-dimensional grouping and 2-tier tree per dimension)
+CREATE TABLE product_categories (
+    id           UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    dimension_id UUID         NOT NULL REFERENCES category_dimensions(id) ON DELETE RESTRICT,
+    parent_id    UUID         NULL REFERENCES product_categories(id) ON DELETE RESTRICT, -- Intra-dimension parent (for 2-tier tree e.g. Cultural & Wonders -> World Heritage)
+    name         VARCHAR(100) NOT NULL,
+    slug         VARCHAR(100) NOT NULL,
+    description  TEXT,
+    icon_url     VARCHAR(500),
+    sort_order   INT          NOT NULL DEFAULT 0,
+    is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_category_dimension_slug UNIQUE (dimension_id, slug),
     CONSTRAINT chk_category_depth CHECK (id <> parent_id)
 );
-CREATE INDEX idx_categories_parent_id ON product_categories(parent_id);
-CREATE INDEX idx_categories_slug      ON product_categories(slug);
+CREATE INDEX idx_categories_dimension_id ON product_categories(dimension_id);
+CREATE INDEX idx_categories_parent_id    ON product_categories(parent_id);
+CREATE INDEX idx_categories_slug         ON product_categories(slug);
 
 -- Master product entity — the brand/program umbrella
 CREATE TABLE products (
     id                 UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
-    parent_category_id UUID         REFERENCES product_categories(id) ON DELETE SET NULL, -- Top-level theme
-    category_id        UUID         REFERENCES product_categories(id) ON DELETE SET NULL, -- Child category
     product_type       VARCHAR(50)  NOT NULL,                    -- JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR
     code               VARCHAR(100) UNIQUE NOT NULL,             -- e.g. GWE-MASTER
     name               VARCHAR(255) NOT NULL,                    -- e.g. Grand West Europe, Swiss Alpine Panorama
@@ -206,8 +244,6 @@ CREATE TABLE products (
     CONSTRAINT chk_products_type           CHECK (product_type IN ('JOURNEY', 'OPEN_TRIP', 'PRIVATE_TRIP', 'DAY_TOUR'))
 );
 CREATE INDEX idx_products_status          ON products(listing_status) WHERE deleted_at IS NULL;
-CREATE INDEX idx_products_category        ON products(category_id);
-CREATE INDEX idx_products_parent_category ON products(parent_category_id);
 CREATE INDEX idx_products_name_trgm       ON products USING GIN (name gin_trgm_ops);
 CREATE INDEX idx_products_slug_trgm       ON products USING GIN (slug gin_trgm_ops);
 
@@ -224,8 +260,9 @@ CREATE TABLE product_journeys (
 
 
 -- =========================================================================
--- 2. HIERARCHY — L2: product_variants
+-- 2. HIERARCHY — L2: product_variants & product_category_assignments
 -- One product → many variants. Each variant is strictly one card on All Tours.
+-- Supports multi-category assignment at Product level (L1) and Variant level (L2).
 -- =========================================================================
 CREATE TABLE product_variants (
     id              UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -255,6 +292,22 @@ CREATE INDEX idx_variants_slug         ON product_variants(slug);
 CREATE INDEX idx_variants_status       ON product_variants(listing_status) WHERE deleted_at IS NULL;
 CREATE INDEX idx_variants_name_trgm    ON product_variants USING GIN (name gin_trgm_ops);
 CREATE INDEX idx_variants_slug_trgm    ON product_variants USING GIN (slug gin_trgm_ops);
+
+-- Multi-dimensional category assignment table (Modular for both Products L1 & Variants L2)
+CREATE TABLE product_category_assignments (
+    id          UUID      PRIMARY KEY DEFAULT uuid_generate_v4(),
+    product_id  UUID      NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    variant_id  UUID      NULL REFERENCES product_variants(id) ON DELETE RESTRICT, -- NULL = Product-level (applies to all variants), NOT NULL = Variant-specific specialized category override/tag
+    category_id UUID      NOT NULL REFERENCES product_categories(id) ON DELETE RESTRICT,
+    is_primary  BOOLEAN   NOT NULL DEFAULT FALSE, -- Flag primary category per dimension for breadcrumbs and primary category chip
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT uq_product_category_assignment UNIQUE NULLS NOT DISTINCT (product_id, variant_id, category_id)
+);
+CREATE INDEX idx_cat_assign_product_id  ON product_category_assignments(product_id);
+CREATE INDEX idx_cat_assign_variant_id  ON product_category_assignments(variant_id);
+CREATE INDEX idx_cat_assign_category_id ON product_category_assignments(category_id);
+CREATE INDEX idx_cat_assign_lookup      ON product_category_assignments(category_id, product_id, variant_id);
 
 -- Flat badges table (supports admin-managed custom promotional labels on listing cards)
 CREATE TABLE product_badges (
@@ -543,6 +596,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Apply timestamp triggers to all tables with updated_at
+CREATE TRIGGER trg_category_dimensions_updated_at BEFORE UPDATE ON category_dimensions   FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
+CREATE TRIGGER trg_product_categories_updated_at  BEFORE UPDATE ON product_categories    FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_products_updated_at             BEFORE UPDATE ON products             FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_journeys_updated_at     BEFORE UPDATE ON product_journeys     FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
 CREATE TRIGGER trg_product_variants_updated_at     BEFORE UPDATE ON product_variants     FOR EACH ROW EXECUTE FUNCTION set_updated_at_timestamp();
@@ -567,24 +622,42 @@ _Each section below shows the ERD for that sub-domain, followed by concrete samp
 
 ---
 
-### 1. Core Product, Taxonomy & Journey
+### 1. Core Product, Taxonomy & Multi-Dimensional Category Assignments
 
 ```mermaid
 erDiagram
-    product_categories ||--o{ products : "parent_category_id / category_id"
-    products           ||--o| product_journeys : "product_id (1:1)"
+    category_dimensions ||--o{ product_categories : "dimension_id"
+    product_categories  ||--o{ product_categories : "parent_id"
+    products            ||--o| product_journeys   : "product_id (1:1)"
+    products            ||--o{ product_category_assignments : "product_id (L1)"
+    product_variants    ||--o{ product_category_assignments : "variant_id (L2)"
+    product_categories  ||--o{ product_category_assignments : "category_id"
+
+    category_dimensions {
+        uuid      id              PK
+        varchar   code            "TRAVEL_STYLE | THEME_INTEREST | SEASON_MOMENT | SPECIAL_EXPERIENCE"
+        varchar   name            "Travel Style, Theme & Interest, etc."
+        boolean   is_multi_select
+    }
 
     product_categories {
-        uuid      id        PK
-        uuid      parent_id FK "self-reference (Parent -> Child)"
-        varchar   name      "e.g. Travel Style, Popular Group Tours"
-        varchar   slug      "e.g. popular-group-tours"
+        uuid      id           PK
+        uuid      dimension_id FK
+        uuid      parent_id    FK "self-reference within dimension"
+        varchar   name         "e.g. Popular Group Tours, Cultural & Heritage, Halal Friendly"
+        varchar   slug         "e.g. popular-group-tours, cultural-heritage"
+    }
+
+    product_category_assignments {
+        uuid      id          PK
+        uuid      product_id  FK "products.id"
+        uuid      variant_id  FK "product_variants.id (NULL = product-level)"
+        uuid      category_id FK "product_categories.id"
+        boolean   is_primary  "Flags primary category per dimension"
     }
 
     products {
         uuid      id                 PK
-        uuid      parent_category_id FK
-        uuid      category_id        FK
         varchar   product_type       "JOURNEY | OPEN_TRIP | PRIVATE_TRIP | DAY_TOUR"
         varchar   code
         varchar   name
@@ -605,13 +678,100 @@ erDiagram
     }
 ```
 
-| Table | id | parent_category_id | category_id | product_type | code | slug | listing_status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `products` | prod_gwe_01 | cat_travel_style | cat_popular_group | JOURNEY | GWE-MASTER | grand-west-europe | ACTIVE |
+#### Sample `category_dimensions`
+
+| id | code | name | is_multi_select | sort_order |
+| :--- | :--- | :--- | :--- | :--- |
+| `dim_travel_style` | `TRAVEL_STYLE` | Format Operasional (Travel Style) | FALSE | 1 |
+| `dim_theme` | `THEME_INTEREST` | Tema Wisata & Minat | TRUE | 2 |
+| `dim_season` | `SEASON_MOMENT` | Musim & Momen Liburan (Holiday Peak) | TRUE | 3 |
+| `dim_special` | `SPECIAL_EXPERIENCE` | Preferensi Layanan & Dietary | TRUE | 4 |
+
+#### Sample `product_categories`
+
+| id | dimension_id | parent_id | name | slug |
+| :--- | :--- | :--- | :--- | :--- |
+| `cat_open_group` | `dim_travel_style` | NULL | Paket Tour / Open Trip | open-group-tour |
+| `cat_private_trip` | `dim_travel_style` | NULL | Private Trip | private-trip |
+| `cat_corporate_mice` | `dim_travel_style` | NULL | Corporate & MICE | corporate-mice |
+| `cat_signature_premium` | `dim_travel_style` | NULL | Signature 5-Star Tour | signature-5star-tour |
+| `cat_cultural_wonders` | `dim_theme` | NULL | Cultural & Wonders | cultural-wonders |
+| `cat_nature_scenic` | `dim_theme` | NULL | Nature & Alpine Scenery | nature-alpine-scenery |
+| `cat_flower_bloom` | `dim_theme` | NULL | Sakura & Flower Blooms | sakura-flower-blooms |
+| `cat_city_shopping` | `dim_theme` | NULL | City Highlights & Shopping | city-highlights-shopping |
+| `cat_safari_wildlife` | `dim_theme` | NULL | Safari & Wildlife | safari-wildlife |
+| `cat_spring_sakura` | `dim_season` | NULL | Spring & Sakura Season | spring-sakura-season |
+| `cat_summer_holiday` | `dim_season` | NULL | Summer Holiday | summer-holiday |
+| `cat_autumn_foliage` | `dim_season` | NULL | Autumn Leaves & Foliage | autumn-foliage-leaves |
+| `cat_winter_snow` | `dim_season` | NULL | Winter Snow & Glacier | winter-snow-glacier |
+| `cat_nataru` | `dim_season` | NULL | Natal & Tahun Baru (NATARU) | nataru-year-end |
+| `cat_libur_lebaran` | `dim_season` | NULL | Liburan Lebaran (Eid) | liburan-lebaran-eid |
+| `cat_libur_sekolah` | `dim_season` | NULL | Liburan Sekolah | liburan-sekolah |
+| `cat_halal_friendly` | `dim_special` | NULL | Halal / Muslim Friendly | halal-muslim-friendly |
+| `cat_family_friendly` | `dim_special` | NULL | Family Friendly | family-friendly |
+| `cat_senior_friendly` | `dim_special` | NULL | Senior & Leisure Friendly | senior-leisure-friendly |
+
+#### Sample `products` & `product_journeys`
+
+| Table | id | product_type | code | slug | listing_status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `products` | `prod_gwe_01` | JOURNEY | GWE-MASTER | grand-west-europe | ACTIVE |
+| `products` | `prod_jpn_01` | JOURNEY | JPN-MASTER | japan-golden-route | ACTIVE |
+| `products` | `prod_kor_01` | JOURNEY | KOR-MASTER | korea-autumn | ACTIVE |
+| `products` | `prod_tur_01` | JOURNEY | TUR-MASTER | turkey-wonders | ACTIVE |
+| `products` | `prod_sws_01` | JOURNEY | SWS-MASTER | swiss-alps-signature | ACTIVE |
+| `products` | `prod_afr_01` | JOURNEY | AFR-MASTER | egypt-morocco | ACTIVE |
+| `products` | `prod_anz_01` | JOURNEY | ANZ-MASTER | aussie-nz-explorer | ACTIVE |
+| `products` | `prod_usa_01` | JOURNEY | USA-MASTER | usa-west-coast | ACTIVE |
 
 | Table | product_id | duration_days | duration_nights |
 | :--- | :--- | :--- | :--- |
-| `product_journeys` | prod_gwe_01 | 11 | 10 |
+| `product_journeys` | `prod_gwe_01` | 11 | 9 |
+| `product_journeys` | `prod_jpn_01` | 7 | 5 |
+| `product_journeys` | `prod_kor_01` | 6 | 4 |
+| `product_journeys` | `prod_tur_01` | 9 | 7 |
+| `product_journeys` | `prod_sws_01` | 8 | 6 |
+| `product_journeys` | `prod_afr_01` | 12 | 10 |
+| `product_journeys` | `prod_anz_01` | 10 | 8 |
+| `product_journeys` | `prod_usa_01` | 11 | 9 |
+
+#### Sample `product_category_assignments` (Multi-Dimensional & Multi-Level)
+
+| id | product_id | variant_id | category_id | Category Name | Dimension | is_primary | Assignment Scope |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `pca_01` | `prod_gwe_01` | **NULL** | `cat_open_group` | Paket Tour / Open Trip | `TRAVEL_STYLE` | **TRUE** | **L1: Product (Grand West Europe)** |
+| `pca_02` | `prod_gwe_01` | **NULL** | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L1: Product (Grand West Europe)** |
+| `pca_03` | `prod_gwe_01` | **NULL** | `cat_halal_friendly` | Halal / Muslim Friendly | `SPECIAL_EXPERIENCE` | **TRUE** | **L1: Product (Grand West Europe)** |
+| `pca_04` | `prod_gwe_01` | `var_gwe_std` | `cat_cultural_wonders` | Cultural & Wonders | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_gwe_std` Classic 11D)** |
+| `pca_05` | `prod_gwe_01` | `var_gwe_fls` | `cat_autumn_foliage` | Autumn Leaves & Foliage | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_fls` Autumn Flash Sale)** |
+| `pca_06` | `prod_gwe_01` | `var_gwe_ntr` | `cat_nataru` | Natal & Tahun Baru (NATARU) | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_gwe_ntr` Nataru Edition)** |
+| `pca_07` | `prod_jpn_01` | `var_jpn_sakura` | `cat_flower_bloom` | Sakura & Flower Blooms | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_jpn_sakura` Japan Sakura 7D)** |
+| `pca_08` | `prod_jpn_01` | `var_jpn_sakura` | `cat_spring_sakura` | Spring & Sakura Season | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_jpn_sakura` Japan Sakura 7D)** |
+| `pca_09` | `prod_kor_01` | `var_kor_autumn` | `cat_autumn_foliage` | Autumn Leaves & Foliage | `SEASON_MOMENT` | **TRUE** | **L2: Variant (`var_kor_autumn` Korea Autumn 6D)** |
+| `pca_10` | `prod_sws_01` | `var_sws_sig` | `cat_signature_premium`| Signature 5-Star Tour | `TRAVEL_STYLE` | **TRUE** | **L2: Variant (`var_sws_sig` Swiss Alps Signature)** |
+| `pca_11` | `prod_sws_01` | `var_sws_sig` | `cat_nature_scenic` | Nature & Alpine Scenery | `THEME_INTEREST` | **TRUE** | **L2: Variant (`var_sws_sig` Swiss Alps Signature)** |
+
+#### Sample `product_badges` (Marketing Visual Card Ribbons)
+
+| id | code | label | background_color | text_color | icon_url | is_active |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `badge_best_seller` | `BEST_SELLER` | 🔥 Best Seller | `#004FC0` | `#FFFFFF` | NULL | TRUE |
+| `badge_flash_sale` | `FLASH_SALE` | ⚡ Flash Sale | `#E8352A` | `#FFFFFF` | NULL | TRUE |
+| `badge_early_bird` | `EARLY_BIRD` | ⚡ Early Bird | `#FFA80F` | `#0A1426` | NULL | TRUE |
+| `badge_populer` | `POPULER` | ✨ Populer | `#FFA80F` | `#0A1426` | NULL | TRUE |
+| `badge_premium` | `PREMIUM` | ⭐ Premium | `#0A1426` | `#FFA80F` | NULL | TRUE |
+| `badge_baru` | `BARU` | 🆕 Baru | `#188a42` | `#FFFFFF` | NULL | TRUE |
+
+#### Sample `product_variant_badges` (M:N Badges to Variants)
+
+| variant_id | badge_id | Applied Variant Card | Visual Rendering on Storefront |
+| :--- | :--- | :--- | :--- |
+| `var_gwe_std` | `badge_best_seller` | Grand Europe Tour 11 Hari | Blue pill `🔥 Best Seller` on top-left card thumbnail & PDP header |
+| `var_gwe_fls` | `badge_flash_sale` | Autumn di Switzerland Flash Sale | Red pill `⚡ Flash Sale` with countdown banner |
+| `var_gwe_eb` | `badge_early_bird` | Early Bird Europe 2026 | Orange pill `⚡ Early Bird` |
+| `var_jpn_sakura` | `badge_populer` | Japan Sakura Golden Route | Orange pill `✨ Populer` |
+| `var_sws_sig` | `badge_premium` | Swiss Alps Signature 8D | Dark navy pill with gold text `⭐ Premium` |
+| `var_afr_egy_mor` | `badge_baru` | Egypt & Morocco 12D | Green pill `🆕 Baru` |
 
 ---
 
@@ -643,7 +803,7 @@ erDiagram
 
     product_badges {
         uuid      id                 PK
-        varchar   code               "BEST_SELLER | SPRING_EDITION"
+        varchar   code               "BEST_SELLER | FLASH_SALE | EARLY_BIRD | POPULER | PREMIUM | BARU"
         varchar   label              "🔥 Best Seller"
         varchar   background_color
         varchar   text_color
@@ -886,19 +1046,28 @@ erDiagram
 
 ```mermaid
 flowchart LR
-    subgraph CORE["🏷️ L1 — Core"]
-        P["products"]
-        PJ["product_journeys"]
+    subgraph TAXONOMY["🏷️ Multi-Dimensional Taxonomy"]
+        DIM["category_dimensions\n(Travel Style, Theme, Season, etc.)"]
+        CAT["product_categories\n(Taxonomy Nodes)"]
+        PCA["product_category_assignments\n(Modular Scoped M:N)"]
     end
 
-    subgraph HIERARCHY["🗂️ L2/L3 — Hierarchy"]
-        PV["product_variants"]
-        PT["product_trips"]
-        PP["product_trip_pricings"]
+    subgraph CORE["🏷️ L1 — Core Umbrella"]
+        P["products\n(Master Tour)"]
+        PJ["product_journeys\n(Base Duration)"]
+    end
+
+    subgraph HIERARCHY["🗂️ L2/L3 — Hierarchy & Pricing"]
+        PV["product_variants\n(Listing Card)"]
+        PT["product_trips\n(Dated Departure)"]
+        PP["product_trip_pricings\n(Age Bands & Quota)"]
+        ADD["product_addons\n(Optional Extras)"]
+        BDG["product_badges\n(Pill Labels)"]
+        PVB["product_variant_badges\n(M:N)"]
     end
 
     subgraph CONTENT["📝 Content"]
-        ITN["product_itineraries"]
+        ITN["product_itineraries\n(Variant Default / Trip Override)"]
         ITEM["product_itinerary_items"]
         LOC["product_locations"]
         SUPP["product_supplementaries"]
@@ -906,58 +1075,89 @@ flowchart LR
 
     subgraph MEDIA["🖼️ Media"]
         M["product_media"]
-        MU["product_media_usages"]
+        MB["product_media_blobs\n(Phase 1 Binary)"]
+        MU["product_media_usages\n(Polymorphic)"]
     end
+
+    subgraph SEO["🔍 SEO & Social"]
+        SEO_M["seo_metadata\n(Polymorphic)"]
+    end
+
+    DIM -->|"1:N"| CAT
+    CAT -->|"1:N"| PCA
+    PCA -->|"Product-Level (L1)"| P
+    PCA -->|"Variant-Level (L2)"| PV
 
     P   -->|"1:1"| PJ
     P   -->|"1:N"| PV
     PV  -->|"1:N"| PT
     PT  -->|"1:N"| PP
-    P   -->|"1:N"| ITN
+    PV  -->|"1:N"| ADD
+    PV  -->|"1:N"| PVB
+    BDG -->|"1:N"| PVB
+
+    PV  -->|"Default (trip_id IS NULL)"| ITN
+    PT  -->|"Override (trip_id IS NOT NULL)"| ITN
     ITN -->|"1:N"| ITEM
     P   -->|"1:N"| LOC
     P   -->|"1:N"| SUPP
+
     P   -->|"1:N"| M
+    M   -->|"1:1"| MB
     M   -->|"1:N"| MU
 
-    MU  -."PRODUCT".-> P
-    MU  -."VARIANT".-> PV
-    MU  -."ITINERARY_ITEM".-> ITEM
-    SUPP -."VARIANT".-> PV
-    SUPP -."TRIP".-> PT
+    MU  -. "PRODUCT" .-> P
+    MU  -. "VARIANT" .-> PV
+    MU  -. "ITINERARY_ITEM" .-> ITEM
+
+    SUPP -. "VARIANT" .-> PV
+    SUPP -. "TRIP" .-> PT
+
+    SEO_M -. "PRODUCT" .-> P
+    SEO_M -. "VARIANT" .-> PV
 ```
 
 ---
 
 ## 📐 Index Summary
 
-| Index Name                              | Table                     | Columns                                                                                          | Type                  | Purpose                                             |
-| --------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------- |
-| `idx_categories_parent_id`              | `product_categories`      | `(parent_id)`                                                                                    | B-Tree                | Parent-child taxonomy traversal                     |
-| `idx_categories_slug`                   | `product_categories`      | `(slug)`                                                                                         | B-Tree                | Category lookup by slug                             |
-| `idx_products_category`                 | `products`                | `(category_id)`                                                                                  | B-Tree                | Filter products by child category                   |
-| `idx_products_parent_category`          | `products`                | `(parent_category_id)`                                                                           | B-Tree                | Filter products by parent category                  |
-| `idx_products_status`                   | `products`                | `(listing_status)` WHERE `deleted_at IS NULL`                                                    | B-Tree partial        | Active product listing                              |
-| `idx_products_name_trgm`                | `products`                | `(name)`                                                                                         | GIN pg_trgm           | Search by product name                              |
-| `idx_products_slug_trgm`                | `products`                | `(slug)`                                                                                         | GIN pg_trgm           | Destination text search                             |
-| `idx_variants_product_id`               | `product_variants`        | `(product_id)`                                                                                   | B-Tree                | Variant lookup by product                           |
-| `idx_variants_name_trgm`                | `product_variants`        | `(name)`                                                                                         | GIN pg_trgm           | Variant name text search                            |
-| `idx_variants_slug_trgm`               | `product_variants`        | `(slug)`                                                                                         | GIN pg_trgm           | Variant slug text search                            |
-| `idx_trips_variant_id`                  | `product_trips`           | `(variant_id)`                                                                                   | B-Tree                | Trip lookup by variant                              |
-| `idx_trips_search`                      | `product_trips`           | `(start_date, min_quota, max_quota)` WHERE `status = 'ACTIVE'`                                   | B-Tree partial        | Search date+total pack (quota) filter               |
-| `idx_pricings_search`                   | `product_trip_pricings`   | `(trip_id, age_band, selling_price)`                                                             | B-Tree                | Price range filter and starting price lookup        |
-| `idx_addons_variant_trip`               | `product_addons`          | `(variant_id, trip_id)`                                                                          | B-Tree                | Add-on lookup by variant and trip                   |
-| `uq_itinerary_variant_default`          | `product_itineraries`     | `(variant_id)` WHERE `trip_id IS NULL`                                                           | B-Tree unique partial | Enforce 1 master default itinerary per variant      |
-| `uq_itinerary_trip_override`            | `product_itineraries`     | `(trip_id)` WHERE `trip_id IS NOT NULL`                                                          | B-Tree unique partial | Enforce 1 custom override itinerary per trip        |
-| `idx_itinerary_items_itinerary_id`      | `product_itinerary_items` | `(itinerary_id)`                                                                                 | B-Tree                | Itinerary item lookup by itinerary                  |
-| `idx_itinerary_items_poi`               | `product_itinerary_items` | `(poi_area_id)`                                                                                  | B-Tree                | Itinerary item POI landmark join                    |
-| `idx_locations_product_id`              | `product_locations`       | `(product_id)`                                                                                   | B-Tree                | Location lookup by product                          |
-| `idx_locations_area_id`                 | `product_locations`       | `(area_id)`                                                                                      | B-Tree                | Join to Area hierarchy (anchored to POI, Country, Sub-Continent, or Continent) |
-| `idx_locations_area_name_trgm`          | `product_locations`       | `(area_name)`                                                                                    | GIN pg_trgm           | Destination text search                             |
-| `idx_media_product_id`                  | `product_media`           | `(product_id)`                                                                                   | B-Tree                | Media lookup by product                             |
-| `idx_media_type`                        | `product_media`           | `(media_type)`                                                                                   | B-Tree                | Filter media by visual type (IMAGE / VIDEO)         |
-| `idx_media_storage`                     | `product_media`           | `(storage_provider)`                                                                             | B-Tree                | Storage provider lookup (DATABASE / S3 / R2)        |
-| `idx_media_usages_target`               | `product_media_usages`    | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic media lookup                            |
-| `uq_media_usages_single_cover`          | `product_media_usages`    | `(target_id, usage_context)` WHERE `usage_context = 'COVER'`                                     | B-Tree unique partial | Enforce single COVER image per entity target        |
-| `idx_supplementaries_target`            | `product_supplementaries` | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic content lookup                          |
-| `idx_seo_target`                        | `seo_metadata`            | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic SEO metadata lookup                     |
+| Index Name                              | Table                          | Columns                                                                                          | Type                  | Purpose                                             |
+| --------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------- |
+| `idx_dimensions_code`                   | `category_dimensions`          | `(code)`                                                                                         | B-Tree unique         | Dimension code lookup                               |
+| `idx_categories_dimension_id`           | `product_categories`           | `(dimension_id)`                                                                                 | B-Tree                | Filter categories by taxonomy dimension             |
+| `idx_categories_parent_id`              | `product_categories`           | `(parent_id)`                                                                                    | B-Tree                | Parent-child taxonomy traversal                     |
+| `idx_categories_slug`                   | `product_categories`           | `(slug)`                                                                                         | B-Tree                | Category lookup by slug                             |
+| `idx_cat_assign_product_id`             | `product_category_assignments` | `(product_id)`                                                                                   | B-Tree                | Fetch all categories assigned to product (L1)       |
+| `idx_cat_assign_variant_id`             | `product_category_assignments` | `(variant_id)`                                                                                   | B-Tree                | Fetch variant-specific category overrides (L2)      |
+| `idx_cat_assign_category_id`            | `product_category_assignments` | `(category_id)`                                                                                  | B-Tree                | Reverse lookup products/variants by category        |
+| `idx_cat_assign_lookup`                 | `product_category_assignments` | `(category_id, product_id, variant_id)`                                                          | B-Tree composite      | Fast category filter evaluation in search queries   |
+| `idx_badges_code`                       | `product_badges`               | `(code)`                                                                                         | B-Tree unique         | Promotional badge code lookup                       |
+| `idx_var_badges_variant_id`             | `product_variant_badges`       | `(variant_id)`                                                                                   | B-Tree                | Fetch badges for variant card                       |
+| `idx_var_badges_badge_id`               | `product_variant_badges`       | `(badge_id)`                                                                                     | B-Tree                | Reverse lookup variants by badge                    |
+| `idx_var_badges_lookup`                 | `product_variant_badges`       | `(badge_id, variant_id)`                                                                         | B-Tree composite      | Fast promotional badge filter evaluation in search  |
+| `idx_products_status`                   | `products`                     | `(listing_status)` WHERE `deleted_at IS NULL`                                                    | B-Tree partial        | Active product listing                              |
+| `idx_products_name_trgm`                | `products`                     | `(name)`                                                                                         | GIN pg_trgm           | Search by product name                              |
+| `idx_products_slug_trgm`                | `products`                     | `(slug)`                                                                                         | GIN pg_trgm           | Destination text search                             |
+| `idx_variants_product_id`               | `product_variants`             | `(product_id)`                                                                                   | B-Tree                | Variant lookup by product                           |
+| `idx_variants_name_trgm`                | `product_variants`             | `(name)`                                                                                         | GIN pg_trgm           | Variant name text search                            |
+| `idx_variants_slug_trgm`                | `product_variants`             | `(slug)`                                                                                         | GIN pg_trgm           | Variant slug text search                            |
+| `idx_trips_variant_id`                  | `product_trips`                | `(variant_id)`                                                                                   | B-Tree                | Trip lookup by variant                              |
+| `idx_trips_search`                      | `product_trips`                | `(start_date, min_quota, max_quota)` WHERE `status = 'ACTIVE'`                                   | B-Tree partial        | Search date+total pack (quota) filter               |
+| `idx_pricings_search`                   | `product_trip_pricings`        | `(trip_id, age_band, selling_price)`                                                             | B-Tree                | Price range filter and starting price lookup        |
+| `idx_addons_variant_trip`               | `product_addons`               | `(variant_id, trip_id)`                                                                          | B-Tree                | Add-on lookup by variant and trip                   |
+| `uq_itinerary_variant_default`          | `product_itineraries`          | `(variant_id)` WHERE `trip_id IS NULL`                                                           | B-Tree unique partial | Enforce 1 master default itinerary per variant      |
+| `uq_itinerary_trip_override`            | `product_itineraries`          | `(trip_id)` WHERE `trip_id IS NOT NULL`                                                          | B-Tree unique partial | Enforce 1 custom override itinerary per trip        |
+| `idx_itinerary_items_itinerary_id`      | `product_itinerary_items`      | `(itinerary_id)`                                                                                 | B-Tree                | Itinerary item lookup by itinerary                  |
+| `idx_itinerary_items_poi`               | `product_itinerary_items`      | `(poi_area_id)`                                                                                  | B-Tree                | Itinerary item POI landmark join                    |
+| `idx_locations_product_id`              | `product_locations`            | `(product_id)`                                                                                   | B-Tree                | Location lookup by product                          |
+| `idx_locations_area_id`                 | `product_locations`            | `(area_id)`                                                                                      | B-Tree                | Join to Area hierarchy (anchored to POI/Country...) |
+| `idx_locations_area_name_trgm`          | `product_locations`            | `(area_name)`                                                                                    | GIN pg_trgm           | Destination text search                             |
+| `idx_media_product_id`                  | `product_media`                | `(product_id)`                                                                                   | B-Tree                | Media lookup by product                             |
+| `idx_media_type`                        | `product_media`                | `(media_type)`                                                                                   | B-Tree                | Filter media by visual type (IMAGE / VIDEO)         |
+| `idx_media_storage`                     | `product_media`                | `(storage_provider)`                                                                             | B-Tree                | Storage provider lookup (DATABASE / S3 / R2)        |
+| `idx_media_usages_target`               | `product_media_usages`         | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic media lookup                            |
+| `uq_media_usages_single_cover`          | `product_media_usages`         | `(target_id, usage_context)` WHERE `usage_context = 'COVER'`                                     | B-Tree unique partial | Enforce single COVER image per entity target        |
+| `idx_supplementaries_target`            | `product_supplementaries`      | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic content lookup                          |
+| `idx_seo_target`                        | `seo_metadata`                 | `(target_type, target_id)`                                                                       | B-Tree                | Polymorphic SEO metadata lookup                     |
+
+
